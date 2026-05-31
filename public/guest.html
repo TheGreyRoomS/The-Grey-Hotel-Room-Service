@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#9B9B9F">
+<title>The Grey — Room Service</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --cream:#F5F2ED;
+  --cream2:#EDE9E3;
+  --white:#FFFFFF;
+  --grey-light:#E8E4DF;
+  --grey-mid:#C8C0B8;
+  --brown-light:#C4A882;
+  --brown:#A08060;
+  --brown-dark:#7A6048;
+  --text:#2C2420;
+  --text-muted:#9A8878;
+  --surface:#FFFFFF;
+  --border:#DDD8D0;
+  --green:#5A8A6A;
+  --red:#A05050;
+  --radius:10px;
+  --shadow:0 2px 16px rgba(100,80,60,.08);
+  --shadow-lg:0 8px 32px rgba(100,80,60,.12);
+}
+body{font-family:'Helvetica Neue',Arial,sans-serif;background:#9B9B9F;color:var(--text);
+  min-height:100vh;padding-bottom:110px;}
+img{display:block;}
+button{cursor:pointer;border:none;font-family:inherit;}
+
+/* ── Header ─────────────────────────────────────────────────────── */
+#header{position:sticky;top:0;z-index:100;background:#9B9B9F;
+  padding:14px 20px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;
+  border-bottom:1px solid rgba(0,0,0,.08);box-shadow:0 2px 10px rgba(0,0,0,.08);}
+.header-contact{display:flex;flex-direction:column;gap:4px;}
+.header-contact span{font-size:.72rem;color:#2A2A2A;letter-spacing:.3px;}
+.logo-area{display:flex;flex-direction:column;align-items:center;gap:8px;}
+.logo-text{text-align:center;}
+.logo-text .logo-name{font-size:1rem;font-weight:400;letter-spacing:5px;
+  color:#2A2A2A;text-transform:uppercase;font-family:'Georgia',serif;}
+.logo-text .logo-sub{font-size:.52rem;letter-spacing:2px;color:#2A2A2A;
+  text-transform:uppercase;margin-top:1px;opacity:.7;}
+.room-badge{border:1px solid rgba(42,42,42,.3);color:#2A2A2A;background:transparent;
+  padding:5px 14px;border-radius:20px;font-size:.72rem;letter-spacing:1.5px;
+  text-transform:uppercase;font-family:'Georgia',serif;justify-self:end;}
+
+/* ── Category Tabs ───────────────────────────────────────────────── */
+#cat-bar{background:var(--white);border-bottom:1px solid var(--border);
+  overflow-x:auto;display:flex;gap:0;padding:0 8px;
+  scrollbar-width:none;position:sticky;top:90px;z-index:90;}
+#cat-bar::-webkit-scrollbar{display:none;}
+.cat-tab{padding:13px 16px;white-space:nowrap;font-size:.72rem;
+  color:var(--text-muted);border:none;background:transparent;
+  border-bottom:2px solid transparent;transition:all .2s;flex-shrink:0;
+  letter-spacing:1.5px;text-transform:uppercase;font-family:'Georgia',serif;}
+.cat-tab.active{color:var(--brown);border-bottom-color:var(--brown);}
+
+/* ── Closed Banner ───────────────────────────────────────────────── */
+#closed-banner{display:none;background:#FDF6EE;border-left:3px solid var(--brown-light);
+  padding:12px 16px;margin:12px;border-radius:6px;font-size:.85rem;color:var(--brown-dark);}
+
+/* ── Menu ────────────────────────────────────────────────────────── */
+#menu{padding:16px;max-width:1200px;margin:0 auto;}
+.cat-section{margin-bottom:32px;}
+.cat-title{font-size:.68rem;color:#2A2A2A;padding:8px 0 12px;
+  border-bottom:1px solid var(--border);margin-bottom:14px;
+  letter-spacing:3px;text-transform:uppercase;font-family:'Georgia',serif;
+  display:flex;align-items:center;gap:10px;}
+.items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;justify-items:center;}
+
+.item-card{background:var(--white);border-radius:var(--radius);overflow:hidden;
+  display:flex;flex-direction:column;border:1px solid var(--border);
+  box-shadow:var(--shadow);transition:box-shadow .2s,transform .15s;width:100%;}
+.item-card:active{transform:scale(.98);box-shadow:var(--shadow-lg);}
+.item-card.unavailable{opacity:.45;}
+.item-img{width:100%;height:140px;object-fit:cover;}
+.item-img-placeholder{width:100%;height:140px;background:var(--cream2);
+  display:flex;align-items:center;justify-content:center;font-size:2rem;color:var(--grey-mid);}
+.item-info{flex:1;padding:10px;display:flex;flex-direction:column;gap:4px;}
+.item-name{font-size:.85rem;font-weight:400;color:var(--text);font-family:'Georgia',serif;line-height:1.3;}
+.item-desc{font-size:.72rem;color:var(--text-muted);line-height:1.4;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.item-footer{display:flex;align-items:center;justify-content:space-between;
+  padding:8px 10px;border-top:1px solid var(--border);background:var(--cream);margin-top:auto;}
+.item-price{font-size:.9rem;font-weight:400;color:var(--brown-dark);font-family:'Georgia',serif;}
+.item-tags{display:flex;gap:3px;flex-wrap:wrap;}
+.tag{font-size:.55rem;padding:2px 6px;border-radius:20px;font-weight:400;
+  letter-spacing:.8px;text-transform:uppercase;font-family:'Helvetica Neue',Arial,sans-serif;}
+.tag.vegetarian,.tag.vegan{background:#EDF5ED;color:#5A7A5A;}
+.tag.gluten_free,.tag.gluten_free_option{background:#FDF5E0;color:#8A7030;}
+.tag.halal{background:#EDF0F8;color:#506080;}
+.tag.nuts{background:#FAE8E8;color:#905050;}
+.add-btn{background:var(--brown);color:white;width:28px;height:28px;border-radius:50%;
+  font-size:1.1rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  box-shadow:0 2px 8px rgba(160,128,96,.3);}
+.unavailable-label{font-size:.6rem;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;}
+
+/* ── Modal ────────────────────────────────────────────────────────── */
+#modal-overlay{display:none;position:fixed;inset:0;background:rgba(44,36,32,.5);
+  z-index:200;align-items:flex-end;}
+#modal-overlay.open{display:flex;}
+#modal{background:var(--white);border-radius:20px 20px 0 0;width:100%;
+  max-height:92vh;overflow-y:auto;animation:slideUp .28s ease;position:relative;}
+@keyframes slideUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
+#modal img{width:100%;height:210px;object-fit:cover;}
+.modal-body{padding:22px;}
+.modal-name{font-size:1.15rem;font-weight:400;color:var(--text);font-family:'Georgia',serif;letter-spacing:.3px;}
+.modal-price{font-size:1rem;color:var(--brown-dark);margin:6px 0;font-family:'Georgia',serif;}
+.modal-desc{font-size:.84rem;color:var(--text-muted);line-height:1.65;margin:8px 0;}
+.modal-allergens{font-size:.75rem;color:var(--text-muted);background:var(--cream2);
+  padding:9px 13px;border-radius:6px;margin:8px 0;border-left:2px solid var(--brown-light);}
+.modal-notes label{font-size:.65rem;color:var(--brown);letter-spacing:2px;
+  text-transform:uppercase;display:block;margin-bottom:5px;font-family:'Helvetica Neue',Arial,sans-serif;}
+.modal-notes textarea{width:100%;border:1px solid var(--border);border-radius:8px;
+  padding:11px;font-family:'Georgia',serif;font-size:.88rem;resize:none;outline:none;
+  background:var(--cream);color:var(--text);}
+.modal-notes textarea:focus{border-color:var(--brown-light);}
+.modal-add-row{display:flex;align-items:center;justify-content:space-between;margin-top:18px;}
+.qty-ctrl{display:flex;align-items:center;gap:16px;}
+.qty-btn{width:34px;height:34px;border-radius:50%;border:1.5px solid var(--brown-light);
+  background:var(--white);color:var(--brown);font-size:1.1rem;}
+.qty-num{font-size:1rem;min-width:24px;text-align:center;color:var(--text);font-family:'Georgia',serif;}
+.modal-add-btn{background:var(--brown);color:white;padding:12px 26px;border-radius:25px;
+  font-size:.75rem;letter-spacing:2px;text-transform:uppercase;
+  font-family:'Helvetica Neue',Arial,sans-serif;box-shadow:0 4px 16px rgba(160,128,96,.35);}
+.close-modal{position:absolute;top:14px;right:16px;font-size:1rem;
+  background:rgba(255,255,255,.9);color:var(--text-muted);border:1px solid var(--border);
+  width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;}
+
+/* ── Option Groups ───────────────────────────────────────────────── */
+.option-group{margin:14px 0;}
+.option-group-label{font-size:.65rem;color:var(--brown);letter-spacing:2px;
+  text-transform:uppercase;display:block;margin-bottom:8px;
+  font-family:'Helvetica Neue',Arial,sans-serif;}
+.option-group-label .required-star{color:var(--red);}
+.option-chips{display:flex;flex-wrap:wrap;gap:7px;}
+.option-chip{padding:8px 16px;border:1.5px solid var(--border);border-radius:25px;
+  font-size:.78rem;font-family:'Georgia',serif;background:var(--cream);
+  color:var(--text-muted);cursor:pointer;transition:all .2s;}
+.option-chip.selected{border-color:var(--brown);color:var(--brown);
+  background:var(--cream2);box-shadow:0 2px 8px rgba(160,128,96,.15);}
+
+/* ── Divider ─────────────────────────────────────────────────────── */
+.modal-divider{height:1px;background:var(--border);margin:14px 0;}
+
+/* ── Cart Button ─────────────────────────────────────────────────── */
+#cart-btn{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:var(--brown-dark);color:white;padding:15px 30px;border-radius:30px;
+  font-size:.75rem;letter-spacing:2px;text-transform:uppercase;
+  font-family:'Helvetica Neue',Arial,sans-serif;
+  display:none;align-items:center;gap:12px;
+  box-shadow:0 6px 28px rgba(100,70,40,.3);z-index:150;min-width:230px;
+  justify-content:space-between;}
+#cart-btn.show{display:flex;}
+#cart-count{background:rgba(255,255,255,.25);color:white;width:24px;height:24px;
+  border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.72rem;}
+
+/* ── Cart View ───────────────────────────────────────────────────── */
+#cart-view{display:none;padding:14px;}
+.cart-item{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:10px;
+  box-shadow:var(--shadow);}
+.cart-item-name{font-weight:400;font-size:.9rem;color:var(--text);font-family:'Georgia',serif;}
+.cart-item-price{color:var(--text-muted);font-size:.8rem;margin-top:2px;}
+.cart-item-notes{font-size:.72rem;color:var(--brown);margin-top:3px;}
+.cart-qty-ctrl{display:flex;align-items:center;gap:8px;}
+.cart-qty-btn{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--border);
+  background:var(--white);color:var(--brown);font-size:.9rem;}
+.cart-qty-num{font-size:.9rem;min-width:22px;text-align:center;font-family:'Georgia',serif;}
+.cart-total{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px;margin:12px 0;box-shadow:var(--shadow);}
+.cart-total-row{display:flex;justify-content:space-between;font-size:.85rem;
+  padding:4px 0;color:var(--text-muted);}
+.cart-total-row.big{font-size:1rem;color:var(--text);border-top:1px solid var(--border);
+  padding-top:11px;margin-top:8px;font-family:'Georgia',serif;}
+.order-notes-input{width:100%;border:1px solid var(--border);border-radius:8px;
+  padding:11px;font-family:'Georgia',serif;font-size:.88rem;resize:none;outline:none;
+  background:var(--cream);color:var(--text);margin-top:6px;}
+.order-notes-input:focus{border-color:var(--brown-light);}
+.section-label{font-size:.62rem;text-transform:uppercase;letter-spacing:2px;
+  color:var(--brown);margin:16px 0 6px;font-family:'Helvetica Neue',Arial,sans-serif;}
+.checkout-btn{width:100%;background:var(--brown-dark);color:white;padding:15px;
+  border-radius:25px;font-size:.75rem;margin-top:14px;letter-spacing:2.5px;
+  text-transform:uppercase;font-family:'Helvetica Neue',Arial,sans-serif;
+  box-shadow:0 4px 16px rgba(100,70,40,.25);}
+.back-link{color:var(--brown);font-size:.7rem;letter-spacing:1.5px;text-transform:uppercase;
+  display:flex;align-items:center;gap:4px;padding:12px 0;background:none;border:none;
+  font-family:'Helvetica Neue',Arial,sans-serif;}
+
+/* ── Checkout ────────────────────────────────────────────────────── */
+#checkout-view{display:none;padding:14px;}
+.checkout-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px;margin-bottom:12px;box-shadow:var(--shadow);}
+.checkout-card h3{font-size:.62rem;letter-spacing:2.5px;text-transform:uppercase;
+  color:var(--brown);margin-bottom:12px;font-family:'Helvetica Neue',Arial,sans-serif;}
+.room-confirm{background:var(--cream2);border:1px solid var(--border);
+  padding:14px 16px;border-radius:8px;display:flex;align-items:center;gap:14px;}
+.room-confirm .room-num{font-size:1.5rem;font-weight:400;color:var(--brown-dark);
+  font-family:'Georgia',serif;letter-spacing:2px;}
+.room-confirm .room-label{font-size:.6rem;color:var(--text-muted);letter-spacing:1.5px;
+  text-transform:uppercase;font-family:'Helvetica Neue',Arial,sans-serif;}
+.form-row{margin-bottom:12px;}
+.form-row label{font-size:.62rem;color:var(--brown);letter-spacing:1.5px;
+  text-transform:uppercase;display:block;margin-bottom:4px;
+  font-family:'Helvetica Neue',Arial,sans-serif;}
+.form-row input,.form-row select{width:100%;border:1px solid var(--border);border-radius:8px;
+  padding:11px 12px;font-family:'Georgia',serif;font-size:.9rem;outline:none;
+  background:var(--cream);color:var(--text);}
+.form-row input:focus{border-color:var(--brown-light);}
+.payment-options{display:flex;flex-direction:column;gap:8px;}
+.pay-option{border:1.5px solid var(--border);border-radius:10px;padding:14px;
+  display:flex;align-items:center;gap:12px;cursor:pointer;background:var(--cream);transition:all .2s;}
+.pay-option.selected{border-color:var(--brown);background:var(--white);
+  box-shadow:0 2px 10px rgba(160,128,96,.12);}
+.pay-option-icon{font-size:1.3rem;}
+.pay-option-title{font-weight:400;font-size:.88rem;color:var(--text);font-family:'Georgia',serif;}
+.pay-option-sub{font-size:.73rem;color:var(--text-muted);margin-top:2px;}
+.place-order-btn{width:100%;background:var(--brown-dark);color:white;padding:15px;
+  border-radius:25px;font-size:.75rem;margin-top:16px;letter-spacing:2.5px;
+  text-transform:uppercase;font-family:'Helvetica Neue',Arial,sans-serif;
+  box-shadow:0 4px 16px rgba(100,70,40,.25);}
+.delivery-options{display:flex;gap:8px;}
+.delivery-opt{flex:1;border:1.5px solid var(--border);border-radius:10px;padding:13px;
+  text-align:center;cursor:pointer;background:var(--cream);transition:all .2s;}
+.delivery-opt.selected{border-color:var(--brown);background:var(--white);}
+.delivery-opt .d-icon{font-size:1.2rem;}
+.delivery-opt .d-label{font-size:.65rem;letter-spacing:1.5px;text-transform:uppercase;
+  display:block;margin-top:4px;color:var(--text-muted);
+  font-family:'Helvetica Neue',Arial,sans-serif;}
+.delivery-opt.selected .d-label{color:var(--brown);}
+
+/* ── Confirmation ────────────────────────────────────────────────── */
+#confirm-view{display:none;padding:28px 18px;text-align:center;}
+.confirm-icon{font-size:3rem;margin-bottom:16px;}
+.confirm-title{font-size:1.1rem;font-weight:400;color:var(--text);letter-spacing:4px;
+  text-transform:uppercase;margin-bottom:8px;font-family:'Georgia',serif;}
+.confirm-ref{font-size:.72rem;color:var(--text-muted);margin-bottom:22px;letter-spacing:1px;}
+.eta-card{background:var(--brown);color:white;border-radius:var(--radius);
+  padding:22px;margin:16px 0;}
+.eta-mins{font-size:2.4rem;font-weight:400;font-family:'Georgia',serif;}
+.eta-label{font-size:.65rem;color:rgba(255,255,255,.75);margin-top:4px;
+  letter-spacing:2.5px;text-transform:uppercase;font-family:'Helvetica Neue',Arial,sans-serif;}
+.status-bar{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px;margin:16px 0;box-shadow:var(--shadow);}
+.status-bar h3{font-size:.62rem;color:var(--brown);margin-bottom:16px;
+  letter-spacing:2.5px;text-transform:uppercase;font-family:'Helvetica Neue',Arial,sans-serif;}
+.status-steps{display:flex;justify-content:space-between;position:relative;}
+.status-steps::before{content:'';position:absolute;top:15px;left:10%;right:10%;
+  height:1px;background:var(--border);z-index:0;}
+.step{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;position:relative;z-index:1;}
+.step-dot{width:30px;height:30px;border-radius:50%;border:1.5px solid var(--border);
+  background:var(--white);display:flex;align-items:center;justify-content:center;
+  font-size:.75rem;color:var(--text-muted);}
+.step.done .step-dot{background:var(--green);border-color:var(--green);color:white;}
+.step.active .step-dot{background:var(--brown);border-color:var(--brown);color:white;}
+.step-label{font-size:.58rem;color:var(--text-muted);text-align:center;
+  letter-spacing:1px;text-transform:uppercase;font-family:'Helvetica Neue',Arial,sans-serif;}
+.step.active .step-label{color:var(--brown);}
+.confirm-summary{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px;text-align:left;margin:16px 0;box-shadow:var(--shadow);}
+.confirm-summary h3{font-size:.62rem;color:var(--brown);margin-bottom:12px;
+  letter-spacing:2.5px;text-transform:uppercase;font-family:'Helvetica Neue',Arial,sans-serif;}
+.confirm-item{display:flex;justify-content:space-between;font-size:.82rem;
+  padding:6px 0;border-bottom:1px solid var(--border);color:var(--text-muted);}
+.confirm-item:last-child{border:none;}
+.call-btn{background:var(--white);border:1.5px solid var(--brown-light);color:var(--brown);
+  padding:12px 26px;border-radius:25px;font-size:.72rem;letter-spacing:2px;
+  text-transform:uppercase;margin-top:14px;font-family:'Helvetica Neue',Arial,sans-serif;}
+.new-order-btn{background:var(--cream2);border:1px solid var(--border);color:var(--text-muted);
+  padding:12px 26px;border-radius:25px;font-size:.72rem;letter-spacing:2px;
+  text-transform:uppercase;margin-top:8px;font-family:'Helvetica Neue',Arial,sans-serif;}
+
+/* ── Loading & Toast ──────────────────────────────────────────────── */
+#loading{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:65vh;gap:16px;}
+.spinner{width:36px;height:36px;border:2px solid var(--grey-light);
+  border-top-color:var(--brown);border-radius:50%;animation:spin .9s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+#toast{position:fixed;bottom:105px;left:50%;transform:translateX(-50%);
+  background:var(--brown-dark);color:white;padding:10px 22px;border-radius:25px;
+  font-size:.72rem;letter-spacing:1.5px;text-transform:uppercase;z-index:300;
+  opacity:0;transition:opacity .3s;white-space:nowrap;
+  font-family:'Helvetica Neue',Arial,sans-serif;
+  box-shadow:0 4px 16px rgba(100,70,40,.3);}
+#toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div class="header-contact">
+    <span>📞 +27 (0) 21 421 1106</span>
+    <span>💬 +27 (0) 72 541 3196</span>
+  </div>
+  <div class="logo-area">
+    <svg width="44" height="44" viewBox="0 0 100 100" fill="none">
+      <circle cx="50" cy="50" r="45" stroke="#2A2A2A" stroke-width="3" fill="none"/>
+      <path d="M50 16 A34 34 0 1 1 16 50" stroke="#2A2A2A" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+      <path d="M50 25 A25 25 0 1 1 25 50" stroke="#2A2A2A" stroke-width="2.3" fill="none" stroke-linecap="round"/>
+      <path d="M50 34 A16 16 0 1 1 34 50" stroke="#2A2A2A" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+      <path d="M66 50 L54 50 L54 60" stroke="#2A2A2A" stroke-width="2.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="logo-text">
+      <div class="logo-name">The Grey Hotel</div>
+      <div class="logo-sub">De Waterkant · Cape Town</div>
+    </div>
+  </div>
+  <div class="room-badge" id="header-room">Room —</div>
+</div>
+
+<div id="closed-banner"><span id="closed-msg">Enjoy breakfast in the comfort of your room. Available daily from 07:00 to 11:00.</span></div>
+
+<div id="loading">
+  <svg width="52" height="52" viewBox="0 0 100 100" fill="none">
+    <circle cx="50" cy="50" r="45" stroke="#DDD8D0" stroke-width="3" fill="none"/>
+    <path d="M50 16 A34 34 0 1 1 16 50" stroke="#A08060" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M50 25 A25 25 0 1 1 25 50" stroke="#C4A882" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M50 34 A16 16 0 1 1 34 50" stroke="#DDD8D0" stroke-width="2" fill="none" stroke-linecap="round"/>
+  </svg>
+  <p style="color:var(--text-muted);font-size:.68rem;letter-spacing:3px;text-transform:uppercase;font-family:'Helvetica Neue',Arial,sans-serif;">Loading Menu</p>
+</div>
+
+<div id="cat-bar" style="display:none;"></div>
+<div id="menu" style="display:none;"></div>
+<div id="cart-view"></div>
+<div id="checkout-view"></div>
+<div id="confirm-view"></div>
+
+<button id="cart-btn" onclick="showCart()">
+  <span>View Order</span>
+  <div><span id="cart-total-preview" style="margin-right:8px;"></span><span id="cart-count">0</span></div>
+</button>
+
+<div id="modal-overlay" onclick="closeModal(event)">
+  <div id="modal">
+    <button class="close-modal" onclick="closeModalBtn()">✕</button>
+    <img id="modal-img" src="" alt="">
+    <div class="modal-body">
+      <div class="item-tags" id="modal-tags"></div>
+      <div class="modal-name" id="modal-name"></div>
+      <div class="modal-price" id="modal-price"></div>
+      <div class="modal-desc" id="modal-desc"></div>
+      <div class="modal-allergens" id="modal-allergens"></div>
+      <div id="modal-options"></div>
+      <div class="modal-divider"></div>
+      <div class="modal-notes">
+        <label>Special Requests</label>
+        <textarea id="modal-notes-input" rows="2" placeholder="e.g. No onions, sauce on the side…"></textarea>
+      </div>
+      <div class="modal-add-row">
+        <div class="qty-ctrl">
+          <button class="qty-btn" onclick="changeQty(-1)">−</button>
+          <span class="qty-num" id="modal-qty">1</span>
+          <button class="qty-btn" onclick="changeQty(1)">+</button>
+        </div>
+        <button class="modal-add-btn" onclick="addToCartFromModal()">Add to Order</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const ROOM = params.get("room") || "";
+const TOKEN = params.get("token") || "";
+const BASE = location.origin;
+let categories=[], menuItems=[], cart=[], currentItem=null, modalQty=1, orderData=null, kitchenOpen=true;
+const tagLabels={vegetarian:"Vegetarian",vegan:"Vegan",gluten_free:"GF",halal:"Halal",nuts:"Contains Nuts",gluten_free_option:"GF Option"};
+
+async function init() {
+  document.getElementById("header-room").textContent = `Room ${ROOM}`;
+  try {
+    const r=await fetch(`${BASE}/api/kitchen-status`);
+    const d=await r.json();
+    kitchenOpen=d.is_open;
+    if(!kitchenOpen){document.getElementById("closed-msg").textContent=d.message;document.getElementById("closed-banner").style.display="block";}
+  } catch(e){}
+  try {
+    const r=await fetch(`${BASE}/api/menu`);
+    const d=await r.json();
+    categories=d.categories; menuItems=d.items; renderMenu();
+  } catch(e) {
+    document.getElementById("loading").innerHTML="<p style='color:var(--red);padding:20px;font-family:Georgia,serif;'>Failed to load. Please refresh.</p>";
+  }
+}
+
+function renderMenu() {
+  document.getElementById("loading").style.display="none";
+  const catBar=document.getElementById("cat-bar");
+  const menuEl=document.getElementById("menu");
+  catBar.style.display="flex"; menuEl.style.display="block";
+  catBar.innerHTML=""; menuEl.innerHTML="";
+  categories.forEach((cat,i)=>{
+    const its=menuItems.filter(m=>m.category_id===cat.id);
+    if(!its.length) return;
+    const tab=document.createElement("button");
+    tab.className="cat-tab"+(i===0?" active":"");
+    tab.textContent=cat.name;
+    tab.onclick=()=>{
+      document.querySelectorAll(".cat-tab").forEach(t=>t.classList.remove("active"));
+      tab.classList.add("active");
+      document.getElementById(`cat-${cat.id}`)?.scrollIntoView({behavior:"smooth",block:"start"});
+    };
+    catBar.appendChild(tab);
+    const sec=document.createElement("div"); sec.className="cat-section"; sec.id=`cat-${cat.id}`;
+    sec.innerHTML=`<div class="cat-title">${cat.name}${cat.available_from?` <span style="font-size:.58rem;color:#2A2A2A">${cat.available_from}–${cat.available_to}</span>`:""}</div>`;
+    const grid=document.createElement("div"); grid.className="items-grid";
+    its.forEach(item=>grid.appendChild(renderItemCard(item)));
+    sec.appendChild(grid); menuEl.appendChild(sec);
+  });
+}
+
+function renderItemCard(item) {
+  const card=document.createElement("div");
+  card.className="item-card"+(item.is_available?"":" unavailable");
+  card.onclick=()=>openModal(item);
+  const tagsHtml=(item.dietary_tags||[]).map(t=>`<span class="tag ${t}">${tagLabels[t]||t}</span>`).join("");
+  card.innerHTML=`
+    ${item.photo_url?`<img class="item-img" src="${item.photo_url}" alt="${item.name}" loading="lazy">`:`<div class="item-img-placeholder">🍽</div>`}
+    <div class="item-info">
+      <div class="item-name">${item.name}</div>
+      <div class="item-tags">${tagsHtml}</div>
+      <div class="item-desc">${item.description||""}</div>
+    </div>
+    <div class="item-footer">
+      <span class="item-price">R ${item.price.toFixed(2)}</span>
+      ${item.is_available?`<button class="add-btn" onclick="quickAdd(event,'${item.id}')">+</button>`:`<span class="unavailable-label">Unavailable</span>`}
+    </div>`;
+  return card;
+}
+
+function quickAdd(e,itemId){
+  e.stopPropagation();
+  const item=menuItems.find(m=>m.id===itemId);
+  if(!item||!item.is_available) return;
+  const hasRequired=(item.customisation_options||[]).some(g=>g.required);
+  if(hasRequired){openModal(item);return;}
+  addToCart(item,1,""); showToast(`${item.name}`);
+}
+
+function openModal(item){
+  if(!item.is_available) return;
+  currentItem=item; modalQty=1;
+  document.getElementById("modal-qty").textContent="1";
+  document.getElementById("modal-img").src=item.photo_url||"";
+  document.getElementById("modal-img").style.display=item.photo_url?"block":"none";
+  document.getElementById("modal-name").textContent=item.name;
+  document.getElementById("modal-price").textContent=`R ${item.price.toFixed(2)}`;
+  document.getElementById("modal-desc").textContent=item.description||"";
+  const al=document.getElementById("modal-allergens");
+  al.textContent=item.allergens?`Allergens: ${item.allergens}`:""; al.style.display=item.allergens?"block":"none";
+  document.getElementById("modal-tags").innerHTML=(item.dietary_tags||[]).map(t=>`<span class="tag ${t}">${tagLabels[t]||t}</span>`).join("");
+  document.getElementById("modal-notes-input").value="";
+
+  const optionsEl=document.getElementById("modal-options");
+  const opts=item.customisation_options||[];
+  if(opts.length){
+    optionsEl.innerHTML=`<div class="modal-divider"></div>`+opts.map((group,gi)=>`
+      <div class="option-group">
+        <span class="option-group-label">${group.label}${group.required?' <span class="required-star">*</span>':''}</span>
+        <div class="option-chips">
+          ${group.options.map(opt=>`
+            <button class="option-chip" data-group="${gi}" data-value="${opt}"
+              onclick="selectOption(this,${gi})">${opt}</button>
+          `).join("")}
+        </div>
+      </div>`).join("");
+  } else {
+    optionsEl.innerHTML="";
+  }
+
+  document.getElementById("modal-overlay").classList.add("open");
+}
+
+function selectOption(btn,groupIndex){
+  document.querySelectorAll(`.option-chip[data-group="${groupIndex}"]`).forEach(b=>b.classList.remove("selected"));
+  btn.classList.add("selected");
+}
+
+function closeModal(e){if(e.target===document.getElementById("modal-overlay"))closeModalBtn();}
+function closeModalBtn(){document.getElementById("modal-overlay").classList.remove("open");currentItem=null;}
+function changeQty(d){modalQty=Math.max(1,Math.min(10,modalQty+d));document.getElementById("modal-qty").textContent=modalQty;}
+
+function addToCartFromModal(){
+  if(!currentItem) return;
+  const opts=currentItem.customisation_options||[];
+  const selections=[];
+  for(let gi=0;gi<opts.length;gi++){
+    const group=opts[gi];
+    const selected=document.querySelector(`.option-chip[data-group="${gi}"].selected`);
+    if(group.required&&!selected){showToast(`Please select: ${group.label}`);return;}
+    if(selected) selections.push(`${group.label}: ${selected.dataset.value}`);
+  }
+  const userNotes=document.getElementById("modal-notes-input").value.trim();
+  const allNotes=[...selections,...(userNotes?[userNotes]:[])].join(" | ");
+  addToCart(currentItem,modalQty,allNotes);
+  closeModalBtn();
+  showToast(`${modalQty}× ${currentItem.name}`);
+}
+
+function addToCart(item,qty,notes){
+  const ex=cart.find(c=>c.id===item.id&&c.notes===notes);
+  if(ex) ex.quantity+=qty;
+  else cart.push({id:item.id,name:item.name,price:item.price,quantity:qty,notes});
+  updateCartBtn();
+}
+
+function updateCartBtn(){
+  const btn=document.getElementById("cart-btn");
+  const count=cart.reduce((s,c)=>s+c.quantity,0);
+  document.getElementById("cart-count").textContent=count;
+  document.getElementById("cart-total-preview").textContent=`R ${cartTotal().toFixed(2)}`;
+  if(count>0) btn.classList.add("show"); else btn.classList.remove("show");
+}
+
+function cartTotal(){return cart.reduce((s,c)=>s+c.price*c.quantity,0);}
+
+function setView(view){
+  ["menu","cat-bar","cart-view","checkout-view","confirm-view"].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.display="none";
+  });
+  document.getElementById("cart-btn").style.display="none";
+  if(view==="menu"){
+    document.getElementById("cat-bar").style.display="flex";
+    document.getElementById("menu").style.display="block";
+    if(cart.length) document.getElementById("cart-btn").style.display="flex";
+  } else if(view==="cart"){document.getElementById("cart-view").style.display="block";renderCartView();}
+  else if(view==="checkout"){document.getElementById("checkout-view").style.display="block";renderCheckoutView();}
+  else if(view==="confirm"){document.getElementById("confirm-view").style.display="block";}
+}
+
+function showCart(){setView("cart");}
+
+function renderCartView(){
+  const el=document.getElementById("cart-view");
+  if(!cart.length){
+    el.innerHTML=`<div style="text-align:center;padding:60px 20px;">
+      <p style="font-size:2rem;margin-bottom:12px;">🛒</p>
+      <p style="color:var(--text-muted);font-size:.72rem;letter-spacing:2px;text-transform:uppercase;font-family:'Helvetica Neue',Arial,sans-serif;">Your order is empty</p>
+      <button class="checkout-btn" style="margin-top:20px;width:auto;padding:13px 30px;" onclick="setView('menu')">Browse Menu</button>
+    </div>`;
+    return;
+  }
+  el.innerHTML=`
+    <button class="back-link" onclick="setView('menu')">← Menu</button>
+    <p style="font-size:.65rem;letter-spacing:2.5px;text-transform:uppercase;color:var(--brown);margin-bottom:12px;font-family:'Helvetica Neue',Arial,sans-serif;">Your Order</p>
+    ${cart.map((c,i)=>`
+    <div class="cart-item" style="flex-direction:column;align-items:stretch;gap:8px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="flex:1;">
+          <div class="cart-item-name">${c.name}</div>
+          <div class="cart-item-price">R ${(c.price*c.quantity).toFixed(2)}</div>
+        </div>
+        <div class="cart-qty-ctrl">
+          <button class="cart-qty-btn" onclick="cartChangeQty(${i},-1)">−</button>
+          <span class="cart-qty-num">${c.quantity}</span>
+          <button class="cart-qty-btn" onclick="cartChangeQty(${i},1)">+</button>
+        </div>
+      </div>
+      <input type="text" value="${c.notes||""}"
+        placeholder="Special requests (e.g. no onions, extra sauce…)"
+        oninput="cart[${i}].notes=this.value"
+        style="width:100%;border:1px solid var(--border);border-radius:6px;padding:8px 10px;
+          font-family:'Georgia',serif;font-size:.82rem;outline:none;background:var(--cream);color:var(--text);">
+    </div>`).join("")}
+    <div class="cart-total">
+      <div class="cart-total-row big"><span>Total</span><span>R ${cartTotal().toFixed(2)}</span></div>
+    </div>
+    <div class="section-label">Order Notes</div>
+    <textarea class="order-notes-input" id="order-notes" rows="2" placeholder="e.g. Please knock quietly…"></textarea>
+    <button class="checkout-btn" onclick="goCheckout()">Proceed to Checkout</button>`;
+}
+
+function cartChangeQty(i,d){
+  cart[i].quantity+=d;
+  if(cart[i].quantity<=0) cart.splice(i,1);
+  updateCartBtn(); renderCartView();
+}
+
+function goCheckout(){
+  if(!cart.length) return;
+  window._orderNotes=document.getElementById("order-notes")?.value||"";
+  setView("checkout");
+}
+
+let selectedPayment="card", selectedDelivery="asap";
+
+function renderCheckoutView(){
+  const el=document.getElementById("checkout-view");
+  el.innerHTML=`
+    <button class="back-link" onclick="setView('cart')">← Cart</button>
+    <p style="font-size:.65rem;letter-spacing:2.5px;text-transform:uppercase;color:var(--brown);margin-bottom:12px;font-family:'Helvetica Neue',Arial,sans-serif;">Checkout</p>
+
+    <div class="checkout-card">
+      <h3>Delivering to</h3>
+      <div class="room-confirm">
+        <div><div class="room-label">Room</div><div class="room-num">${ROOM}</div></div>
+        <div style="color:var(--text-muted);font-size:.78rem;flex:1;margin-left:12px;font-family:'Georgia',serif;">Please confirm this is your room.</div>
+      </div>
+    </div>
+
+    <div class="checkout-card">
+      <h3>Your Name (optional)</h3>
+      <div class="form-row"><input type="text" id="guest-name" placeholder="First name" autocomplete="given-name"></div>
+    </div>
+
+    <div class="checkout-card">
+      <h3>Delivery Time</h3>
+      <div class="delivery-options">
+        <div class="delivery-opt selected" id="del-asap" onclick="selectDelivery('asap')">
+          <div class="d-icon">⚡</div><span class="d-label">ASAP</span>
+        </div>
+        <div class="delivery-opt" id="del-scheduled" onclick="selectDelivery('scheduled')">
+          <div class="d-icon">🕐</div><span class="d-label">Scheduled</span>
+        </div>
+      </div>
+      <div id="schedule-picker" style="display:none;margin-top:12px;">
+        <div class="form-row"><label>Preferred Time</label><input type="time" id="scheduled-time"></div>
+      </div>
+    </div>
+
+    <div class="checkout-card">
+      <h3>Payment</h3>
+      <div class="payment-options">
+        <div class="pay-option selected" id="pay-card" onclick="selectPayment('card')">
+          <div class="pay-option-icon">💳</div>
+          <div><div class="pay-option-title">Pay Now</div><div class="pay-option-sub">Card or instant EFT</div></div>
+        </div>
+        <div class="pay-option" id="pay-room" onclick="selectPayment('charge_to_room')">
+          <div class="pay-option-icon">🏨</div>
+          <div><div class="pay-option-title">Charge to Room</div><div class="pay-option-sub">Settled at checkout</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="checkout-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="color:var(--text-muted);font-size:.65rem;letter-spacing:2px;text-transform:uppercase;font-family:'Helvetica Neue',Arial,sans-serif;">Total</span>
+        <span style="font-size:1.05rem;font-family:'Georgia',serif;color:var(--brown-dark);">R ${cartTotal().toFixed(2)}</span>
+      </div>
+    </div>
+
+    <button class="place-order-btn" onclick="placeOrder()">Place Order</button>`;
+
+  selectedPayment="card"; selectedDelivery="asap";
+}
+
+function selectPayment(m){
+  selectedPayment=m;
+  document.querySelectorAll(".pay-option").forEach(el=>el.classList.remove("selected"));
+  document.getElementById(m==="card"?"pay-card":"pay-room").classList.add("selected");
+}
+
+function selectDelivery(t){
+  selectedDelivery=t;
+  document.querySelectorAll(".delivery-opt").forEach(el=>el.classList.remove("selected"));
+  document.getElementById(`del-${t}`).classList.add("selected");
+  document.getElementById("schedule-picker").style.display=t==="scheduled"?"block":"none";
+}
+
+async function placeOrder(){
+  if(!kitchenOpen){showToast("Kitchen is currently closed");return;}
+  const btn=document.querySelector(".place-order-btn"); btn.disabled=true; btn.textContent="Placing…";
+  const payload={
+    room_number:ROOM, token:TOKEN,
+    guest_name:document.getElementById("guest-name")?.value||"",
+    items:cart.map(c=>({id:c.id,quantity:c.quantity,notes:c.notes})),
+    payment_method:selectedPayment, delivery_type:selectedDelivery,
+    scheduled_for:selectedDelivery==="scheduled"?document.getElementById("scheduled-time")?.value:null,
+    order_notes:window._orderNotes||""
+  };
+  try{
+    const r=await fetch(`${BASE}/api/orders`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const d=await r.json();
+    if(!r.ok){showToast(d.error||"Order failed");btn.disabled=false;btn.textContent="Place Order";return;}
+    orderData=d;
+    if(selectedPayment==="card") await fetch(`${BASE}/api/payments/simulate`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:d.order_id})});
+    cart=[]; updateCartBtn(); showConfirmation(d); setView("confirm");
+  }catch(e){showToast("Network error — please try again");btn.disabled=false;btn.textContent="Place Order";}
+}
+
+function showConfirmation(order){
+  const el=document.getElementById("confirm-view");
+  el.innerHTML=`
+    <div style="margin:10px 0 20px;">
+      <svg width="64" height="64" viewBox="0 0 100 100" fill="none" style="margin:0 auto;">
+        <circle cx="50" cy="50" r="45" stroke="#DDD8D0" stroke-width="2.5" fill="none"/>
+        <path d="M50 16 A34 34 0 1 1 16 50" stroke="#A08060" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+        <path d="M50 25 A25 25 0 1 1 25 50" stroke="#C4A882" stroke-width="2.3" fill="none" stroke-linecap="round"/>
+        <path d="M50 34 A16 16 0 1 1 34 50" stroke="#DDD8D0" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="confirm-title">Order Confirmed</div>
+    <div class="confirm-ref">${order.order_reference}</div>
+    <div class="eta-card">
+      <div class="eta-mins">${order.estimated_minutes}</div>
+      <div class="eta-label">Estimated Minutes</div>
+    </div>
+    <div class="status-bar">
+      <h3>Order Status</h3>
+      <div class="status-steps" id="status-steps">${renderStatusSteps("received")}</div>
+    </div>
+    <div class="confirm-summary">
+      <h3>Room ${ROOM}</h3>
+      <div class="confirm-item"><span>Payment</span><span>${order.payment_method==="card"?"Card":"Charge to Room"}</span></div>
+      <div class="confirm-item"><span>Total</span><span style="font-family:'Georgia',serif;color:var(--brown-dark);">R ${order.total_amount?.toFixed(2)}</span></div>
+    </div>
+    <button class="call-btn" onclick="window.location.href='tel:+27000000000'">Call Reception</button><br>
+    <button class="new-order-btn" style="margin-top:8px;" onclick="location.reload()">New Order</button>`;
+  if(order.order_id) pollStatus(order.order_id);
+}
+
+function renderStatusSteps(current){
+  const steps=[{key:"received",label:"Received"},{key:"accepted",label:"Accepted"},{key:"preparing",label:"Preparing"},{key:"delivered",label:"Delivered"}];
+  const idx=steps.findIndex(s=>s.key===current);
+  return steps.map((s,i)=>`<div class="step ${i<idx?"done":i===idx?"active":""}">
+    <div class="step-dot">${i<=idx?"✓":"·"}</div>
+    <div class="step-label">${s.label}</div>
+  </div>`).join("");
+}
+
+async function pollStatus(orderId){
+  const steps=document.getElementById("status-steps"); if(!steps) return;
+  try{
+    const r=await fetch(`${BASE}/api/orders/${orderId}/status`);
+    const d=await r.json();
+    if(d.status&&steps) steps.innerHTML=renderStatusSteps(d.status);
+    if(!["delivered","cancelled"].includes(d.status)) setTimeout(()=>pollStatus(orderId),10000);
+  }catch(e){}
+}
+
+let toastTimer;
+function showToast(msg){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),2500);
+}
+
+init();
+</script>
+</body>
+</html>

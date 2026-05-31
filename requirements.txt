@@ -1,0 +1,2 @@
+tornado>=6.1
+PyJWT>=2.0.0

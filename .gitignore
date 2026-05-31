@@ -1,0 +1,9 @@
+hotel.db
+hotel.db-journal
+hotel.db-shm
+hotel.db-wal
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+public/uploads/
