@@ -19,7 +19,7 @@ import tornado.web
 import tornado.websocket
 import jwt
 
-from database import init_db, get_db, hash_password, generate_token, DB_PATH
+from database import init_db, ensure_admin_password, get_db, hash_password, generate_token, DB_PATH
 
 PORT = int(os.environ.get("PORT", 8080))
 JWT_SECRET = os.environ.get("JWT_SECRET", "boutique-hotel-secret-change-in-production")
@@ -822,6 +822,7 @@ if __name__ == "__main__":
     print("🏨 Boutique Hotel Room Service App")
     print("─" * 40)
     init_db()
+    ensure_admin_password()
     app = make_app()
     app.listen(PORT)
     print(f"✓ Server running at http://localhost:{PORT}")

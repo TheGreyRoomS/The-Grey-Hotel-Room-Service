@@ -29,6 +29,15 @@ def hash_password(pw):
     return hashlib.sha256(pw.encode()).hexdigest()
 
 
+def ensure_admin_password():
+    """Always ensure the admin password is set correctly on startup."""
+    conn = get_db()
+    conn.execute("UPDATE admin_users SET password_hash=? WHERE email=?",
+                 (hash_password("RoomS@TGH2026!"), "admin@hotel.com"))
+    conn.commit()
+    conn.close()
+
+
 def init_db():
     conn = get_db()
     c = conn.cursor()
