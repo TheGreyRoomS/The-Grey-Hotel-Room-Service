@@ -12,6 +12,8 @@ import mimetypes
 import os
 import hashlib
 import sqlite3
+import urllib.request
+import urllib.error
 from datetime import datetime, timedelta
 
 import tornado.ioloop
@@ -24,6 +26,8 @@ from database import init_db, ensure_admin_password, get_db, hash_password, gene
 PORT = int(os.environ.get("PORT", 8080))
 JWT_SECRET = os.environ.get("JWT_SECRET", "boutique-hotel-secret-change-in-production")
 JWT_EXPIRY_HOURS = 12
+YOCO_SECRET_KEY = os.environ.get("YOCO_SECRET_KEY", "")
+YOCO_PUBLIC_KEY = os.environ.get("YOCO_PUBLIC_KEY", "")
 
 # Track WebSocket connections for real-time order push
 _ws_clients = set()
@@ -381,23 +385,137 @@ class ApiOrderStatusHandler(BaseHandler):
         json_response(self, order)
 
 
-class ApiPaymentSimulateHandler(BaseHandler):
-    """Simulate card payment (in production, replace with Yoco webhook handler)."""
+class ApiCreateYocoCheckoutHandler(BaseHandler):
+    """Create a Yoco hosted checkout session and return the redirect URL."""
     def post(self):
         body = self.json_body()
         order_id = body.get("order_id")
-        # Simulate success (in production, Yoco sends a webhook here)
+        if not order_id:
+            json_response(self, {"error": "Missing order_id"}, 400)
+            return
+
         conn = get_db()
-        conn.execute("UPDATE orders SET payment_status='paid', status='received', updated_at=? WHERE id=?",
-                     (datetime.now().isoformat(), order_id))
-        conn.execute("UPDATE payments SET status='succeeded', paid_at=? WHERE order_id=?",
-                     (datetime.now().isoformat(), order_id))
-        conn.commit()
-        full_order = get_order_with_items(order_id, conn)
+        order = db_row_to_dict(conn.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone())
         conn.close()
-        if full_order:
-            broadcast_order_update(full_order)
-        json_response(self, {"success": True, "message": "Payment confirmed"})
+        if not order:
+            json_response(self, {"error": "Order not found"}, 404)
+            return
+
+        amount_cents = int(round(order["total_amount"] * 100))
+        base_url = self.request.protocol + "://" + self.request.host
+
+        payload = json.dumps({
+            "amount": amount_cents,
+            "currency": "ZAR",
+            "successUrl": f"{base_url}/payment-success?order_id={order_id}",
+            "cancelUrl": f"{base_url}/payment-cancel?order_id={order_id}",
+            "metadata": {"orderId": order_id, "orderRef": order.get("order_reference", "")}
+        }).encode()
+
+        req = urllib.request.Request(
+            "https://payments.yoco.com/api/checkouts",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {YOCO_SECRET_KEY}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            resp = urllib.request.urlopen(req, timeout=15)
+            result = json.loads(resp.read())
+            redirect_url = result.get("redirectUrl") or result.get("redirect_url")
+            if not redirect_url:
+                json_response(self, {"error": "No redirect URL from Yoco", "detail": result}, 500)
+                return
+            json_response(self, {"checkout_url": redirect_url})
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode()
+            json_response(self, {"error": "Yoco error", "detail": error_body}, 502)
+
+
+class ApiYocoWebhookHandler(BaseHandler):
+    """Receives Yoco payment webhook and marks order as paid."""
+    def post(self):
+        try:
+            event = json.loads(self.request.body)
+        except Exception:
+            self.set_status(400)
+            return
+
+        event_type = event.get("type", "")
+        payload = event.get("payload", {})
+
+        if event_type == "payment.succeeded":
+            metadata = payload.get("metadata", {})
+            order_id = metadata.get("orderId")
+            if order_id:
+                conn = get_db()
+                conn.execute("UPDATE orders SET payment_status='paid', status='received', updated_at=? WHERE id=?",
+                             (datetime.now().isoformat(), order_id))
+                conn.execute("UPDATE payments SET status='succeeded', paid_at=?, gateway_reference=? WHERE order_id=?",
+                             (datetime.now().isoformat(), payload.get("id", ""), order_id))
+                conn.commit()
+                full_order = get_order_with_items(order_id, conn)
+                conn.close()
+                if full_order:
+                    broadcast_order_update(full_order)
+
+        self.set_status(200)
+        self.write("ok")
+
+
+class ApiPaymentSuccessHandler(BaseHandler):
+    """Guest lands here after successful Yoco payment."""
+    def get(self):
+        order_id = self.get_argument("order_id", "")
+        # Yoco may also confirm via webhook; mark paid here as backup
+        if order_id:
+            conn = get_db()
+            conn.execute("UPDATE orders SET payment_status='paid', status='received', updated_at=? WHERE id=?",
+                         (datetime.now().isoformat(), order_id))
+            conn.execute("UPDATE payments SET status='succeeded', paid_at=? WHERE order_id=? AND status='pending'",
+                         (datetime.now().isoformat(), order_id))
+            conn.commit()
+            full_order = get_order_with_items(order_id, conn)
+            conn.close()
+            if full_order:
+                broadcast_order_update(full_order)
+        self.write("""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Payment Successful</title>
+<style>body{font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;
+min-height:100vh;margin:0;background:#f5f5f0;}
+.card{background:white;padding:2.5rem;border-radius:16px;max-width:360px;text-align:center;
+box-shadow:0 4px 20px rgba(0,0,0,.1);}
+h2{color:#2A2A2A;} p{color:#666;}
+.btn{display:inline-block;margin-top:1rem;padding:12px 28px;background:#B8973A;color:white;
+border-radius:30px;text-decoration:none;font-weight:bold;}</style></head>
+<body><div class="card"><div style="font-size:3rem">✅</div>
+<h2>Payment Successful</h2>
+<p>Your order has been received. We'll deliver it to your room shortly.</p>
+<p style="font-size:.85rem;color:#999;">You can close this window.</p>
+</div></body></html>""")
+
+
+class ApiPaymentCancelHandler(BaseHandler):
+    """Guest lands here if they cancel the Yoco payment."""
+    def get(self):
+        self.write("""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Payment Cancelled</title>
+<style>body{font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;
+min-height:100vh;margin:0;background:#f5f5f0;}
+.card{background:white;padding:2.5rem;border-radius:16px;max-width:360px;text-align:center;
+box-shadow:0 4px 20px rgba(0,0,0,.1);}
+h2{color:#2A2A2A;} p{color:#666;}
+.btn{display:inline-block;margin-top:1rem;padding:12px 28px;background:#B8973A;color:white;
+border-radius:30px;text-decoration:none;font-weight:bold;}</style></head>
+<body><div class="card"><div style="font-size:3rem">❌</div>
+<h2>Payment Cancelled</h2>
+<p>Your payment was not completed. Please go back and try again.</p>
+<p style="font-size:.85rem;color:#999;">You can close this window and retry.</p>
+</div></body></html>""")
 
 
 # ─── API: Admin (Protected) ───────────────────────────────────────────────────
@@ -793,7 +911,10 @@ def make_app():
         (r"/api/kitchen-status", ApiKitchenStatusHandler),
         (r"/api/orders", ApiOrdersHandler),
         (r"/api/orders/([^/]+)/status", ApiOrderStatusHandler),
-        (r"/api/payments/simulate", ApiPaymentSimulateHandler),
+        (r"/api/payments/yoco/checkout", ApiCreateYocoCheckoutHandler),
+        (r"/api/payments/yoco/webhook", ApiYocoWebhookHandler),
+        (r"/payment-success", ApiPaymentSuccessHandler),
+        (r"/payment-cancel", ApiPaymentCancelHandler),
 
         # Admin
         (r"/admin/?", AdminAppHandler),
