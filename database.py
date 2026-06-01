@@ -34,6 +34,7 @@ def ensure_admin_password():
     conn = get_db()
     conn.execute("UPDATE admin_users SET password_hash=? WHERE email=?",
                  (hash_password("RoomS@TGH2026!"), "admin@hotel.com"))
+    conn.execute("UPDATE rooms SET name=''")
     conn.commit()
     conn.close()
 
