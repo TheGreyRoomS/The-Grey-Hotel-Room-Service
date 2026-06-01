@@ -625,6 +625,7 @@ function renderCheckoutView(){
       </div>
       <div id="schedule-picker" style="display:none;margin-top:12px;">
         <div class="form-row"><label>Preferred Time</label><input type="time" id="scheduled-time"></div>
+        <div id="schedule-hours-note" style="font-size:.78rem;color:#888;margin-top:4px;padding-left:2px;"></div>
       </div>
     </div>
 
@@ -664,18 +665,43 @@ function selectDelivery(t){
   selectedDelivery=t;
   document.querySelectorAll(".delivery-opt").forEach(el=>el.classList.remove("selected"));
   document.getElementById(`del-${t}`).classList.add("selected");
-  document.getElementById("schedule-picker").style.display=t==="scheduled"?"block":"none";
+  const picker=document.getElementById("schedule-picker");
+  picker.style.display=t==="scheduled"?"block":"none";
+  if(t==="scheduled"){
+    fetch(`${BASE}/api/operating-hours`).then(r=>r.json()).then(h=>{
+      const input=document.getElementById("scheduled-time");
+      const note=document.getElementById("schedule-hours-note");
+      if(h.is_open){
+        input.min=h.open_time;
+        input.max=h.close_time;
+        input.value=h.open_time;
+        note.textContent=`Available: ${h.open_time} – ${h.close_time}`;
+      } else {
+        note.textContent="Kitchen is currently closed for scheduling.";
+      }
+    }).catch(()=>{});
+  }
 }
 
 async function placeOrder(){
   if(!kitchenOpen){showToast("Kitchen is currently closed");return;}
+  if(selectedDelivery==="scheduled"){
+    const input=document.getElementById("scheduled-time");
+    const val=input?.value;
+    const min=input?.min;
+    const max=input?.max;
+    if(!val){showToast("Please select a delivery time");return;}
+    if(min&&max&&(val<min||val>max)){
+      showToast(`Please choose a time between ${min} and ${max}`);return;
+    }
+  }
   const btn=document.querySelector(".place-order-btn"); btn.disabled=true; btn.textContent="Placing…";
   const payload={
     room_number:ROOM, token:TOKEN,
     guest_name:document.getElementById("guest-name")?.value||"",
     items:cart.map(c=>({id:c.id,quantity:c.quantity,notes:c.notes})),
     payment_method:selectedPayment, delivery_type:selectedDelivery,
-    scheduled_for:selectedDelivery==="scheduled"?document.getElementById("scheduled-time")?.value:null,
+    scheduled_for:selectedDelivery==="scheduled"?document.getElementById("scheduled-time")?.value||null:null,
     order_notes:window._orderNotes||""
   };
   try{

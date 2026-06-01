@@ -245,6 +245,19 @@ class ApiKitchenStatusHandler(BaseHandler):
         json_response(self, {"is_open": is_open, "message": message})
 
 
+class ApiOperatingHoursPublicHandler(BaseHandler):
+    """Returns today's open and close times for the schedule picker."""
+    def get(self):
+        day = datetime.now().weekday()
+        conn = get_db()
+        row = conn.execute("SELECT * FROM operating_hours WHERE day_of_week=?", (day,)).fetchone()
+        conn.close()
+        if row and row["is_open"]:
+            json_response(self, {"is_open": True, "open_time": row["open_time"], "close_time": row["close_time"]})
+        else:
+            json_response(self, {"is_open": False, "open_time": "07:00", "close_time": "23:00"})
+
+
 class ApiOrdersHandler(BaseHandler):
     def post(self):
         """Create a new order from a guest."""
@@ -909,6 +922,7 @@ def make_app():
         (r"/api/menu", ApiMenuHandler),
         (r"/api/menu/items/([^/]+)", ApiMenuItemHandler),
         (r"/api/kitchen-status", ApiKitchenStatusHandler),
+        (r"/api/operating-hours", ApiOperatingHoursPublicHandler),
         (r"/api/orders", ApiOrdersHandler),
         (r"/api/orders/([^/]+)/status", ApiOrderStatusHandler),
         (r"/api/payments/yoco/checkout", ApiCreateYocoCheckoutHandler),
