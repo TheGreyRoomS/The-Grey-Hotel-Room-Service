@@ -207,12 +207,12 @@ def _seed_data(conn):
 
     # ── Categories ────────────────────────────────────────────────────────────
     cats = [
-        ("Breakfast",    "Start your morning right",           "🌅", 1, "07:00", "11:30"),
-        ("Light Meals",  "Sandwiches, salads & snacks",        "🥗", 2, None,    None),
-        ("Mains",        "Hearty dishes served all day",       "🍽️", 3, "11:00", "22:00"),
-        ("Desserts",     "Sweet endings",                      "🍰", 4, "11:00", "22:00"),
-        ("Drinks",       "Non-alcoholic beverages",            "☕", 5, None,    None),
-        ("Cocktails & Wine", "Crafted cocktails and fine wines","🍷", 6, "12:00", "23:00"),
+        ("Breakfast",        "Start your morning right",           "🌅", 1, "07:00", "11:00"),
+        ("Light Meals",      "Sandwiches, salads & snacks",        "🥗", 2, None,    None),
+        ("Mains",            "Hearty dishes served all day",       "🍽️", 3, "11:00", "22:00"),
+        ("Desserts",         "Sweet endings",                      "🍰", 4, "11:00", "22:00"),
+        ("Drinks",           "Non-alcoholic beverages",            "☕", 5, None,    None),
+        ("Cocktails & Wine", "Crafted cocktails and fine wines",   "🍷", 6, "12:00", "23:00"),
     ]
     cat_ids = {}
     for name, desc, icon, order, avail_from, avail_to in cats:
@@ -222,58 +222,53 @@ def _seed_data(conn):
                   (cid, name, desc, icon, order, avail_from, avail_to))
 
     # ── Menu Items ────────────────────────────────────────────────────────────
-    # photo_url uses Unsplash source (will load in browser)
+    # (name, description, price, cat_key, photo_url, dietary_tags, allergens, prep_time_minutes, display_order)
     items = [
         # Breakfast
-        ("Full English Breakfast", "Two eggs any style, streaky bacon, grilled tomato, sautéed mushrooms, baked beans and toast", 185.0, "breakfast", cat_ids["Breakfast"], "https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=400&h=300&fit=crop", '["gluten_free_option"]', "Gluten, Eggs, Dairy", 20, 1),
-        ("Eggs Benedict", "Poached eggs on toasted English muffin with hollandaise sauce and grilled ham", 165.0, "breakfast", cat_ids["Breakfast"], "https://images.unsplash.com/photo-1608039829572-78524f79c4c7?w=400&h=300&fit=crop", '[]', "Eggs, Gluten, Dairy", 18, 2),
-        ("Avocado Toast", "Sourdough toast with smashed avocado, poached egg, chilli flakes and microgreens", 145.0, "breakfast", cat_ids["Breakfast"], "https://images.unsplash.com/photo-1541519227354-08fa5d50c820?w=400&h=300&fit=crop", '["vegetarian"]', "Gluten, Eggs", 15, 3),
-        ("Granola & Yoghurt Bowl", "House granola with Greek yoghurt, seasonal berries and honey", 95.0, "breakfast", cat_ids["Breakfast"], "https://images.unsplash.com/photo-1577234286642-fc512a5f8f11?w=400&h=300&fit=crop", '["vegetarian","gluten_free"]', "Dairy, Nuts", 5, 4),
-        ("Continental Basket", "Assorted pastries, fresh fruit, juice and coffee or tea", 125.0, "breakfast", cat_ids["Breakfast"], "https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=400&h=300&fit=crop", '["vegetarian"]', "Gluten, Dairy, Eggs", 10, 5),
-
-        # Light Meals
-        ("Club Sandwich", "Triple-decker with chicken, bacon, egg, lettuce, tomato and mayo on toasted white bread. Served with fries.", 165.0, "light", cat_ids["Light Meals"], "https://images.unsplash.com/photo-1553909489-cd47e0907980?w=400&h=300&fit=crop", '[]', "Gluten, Eggs, Dairy", 20, 1),
-        ("Caesar Salad", "Cos lettuce, parmesan shavings, garlic croutons and house Caesar dressing. Add grilled chicken +R35.", 135.0, "light", cat_ids["Light Meals"], "https://images.unsplash.com/photo-1512852939750-1305098529bf?w=400&h=300&fit=crop", '["vegetarian"]', "Gluten, Dairy, Eggs, Fish", 15, 2),
-        ("Cheese Board", "Selection of three artisan cheeses with fig preserve, grapes, walnuts and crackers", 195.0, "light", cat_ids["Light Meals"], "https://images.unsplash.com/photo-1452195100486-9cc805987862?w=400&h=300&fit=crop", '["vegetarian"]', "Dairy, Gluten, Nuts", 10, 3),
-        ("Margherita Pizza", "Thin-base pizza with tomato sauce, fresh mozzarella and basil", 175.0, "light", cat_ids["Light Meals"], "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=400&h=300&fit=crop", '["vegetarian"]', "Gluten, Dairy", 25, 4),
-
-        # Mains
-        ("Grilled Sirloin Steak", "200g sirloin steak with roasted garlic butter, seasonal vegetables and choice of sauce", 325.0, "mains", cat_ids["Mains"], "https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=400&h=300&fit=crop", '["gluten_free"]', "Dairy", 30, 1),
-        ("Kingklip Fillet", "Pan-seared kingklip with lemon butter sauce, wilted spinach and herb crushed potatoes", 295.0, "mains", cat_ids["Mains"], "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=400&h=300&fit=crop", '["gluten_free"]', "Fish, Dairy", 25, 2),
-        ("Pasta Primavera", "Penne with seasonal vegetables in a light tomato and basil sauce, topped with parmesan", 175.0, "mains", cat_ids["Mains"], "https://images.unsplash.com/photo-1563379091339-03246963d2f2?w=400&h=300&fit=crop", '["vegetarian"]', "Gluten, Dairy", 20, 3),
-        ("Chicken Schnitzel", "Crumbed free-range chicken breast with mushroom cream sauce, chips and coleslaw", 225.0, "mains", cat_ids["Mains"], "https://images.unsplash.com/photo-1585325701954-8e5dcf17eef7?w=400&h=300&fit=crop", '[]', "Gluten, Dairy, Eggs", 25, 4),
-        ("Vegetable Curry", "Slow-cooked mixed vegetable curry in a rich spiced coconut cream, served with basmati rice", 165.0, "mains", cat_ids["Mains"], "https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=400&h=300&fit=crop", '["vegetarian","vegan","gluten_free"]', "None", 25, 5),
-
-        # Desserts
-        ("Chocolate Fondant", "Warm dark chocolate fondant with vanilla bean ice cream", 95.0, "dessert", cat_ids["Desserts"], "https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=400&h=300&fit=crop", '["vegetarian"]', "Gluten, Dairy, Eggs", 20, 1),
-        ("Crème Brûlée", "Classic French vanilla crème brûlée with caramelised sugar crust", 85.0, "dessert", cat_ids["Desserts"], "https://images.unsplash.com/photo-1470124182917-cc6e71b22ecc?w=400&h=300&fit=crop", '["vegetarian","gluten_free"]', "Dairy, Eggs", 15, 2),
-        ("Seasonal Fruit Platter", "Fresh seasonal fruit with honey and mint yoghurt dip", 75.0, "dessert", cat_ids["Desserts"], "https://images.unsplash.com/photo-1568702846914-96b305d2aaeb?w=400&h=300&fit=crop", '["vegetarian","vegan","gluten_free"]', "None", 5, 3),
+        ("Treat Yourself",                    "",                                                                                          50.0,  "Breakfast",        "https://images.unsplash.com/photo-1464349095431-e9a21285b5f3?w=400&h=300&fit=crop", '[]',                              "",       15,  1),
+        ("Smashed Avo & Beetroot Hummus",     "Smashed avocado, beetroot hummus, feta & microgreens on toasted artisan bread",            145.0, "Breakfast",        "https://images.unsplash.com/photo-1541519227354-08fa5d50c820?w=400&h=300&fit=crop", '["vegetarian"]',                 "Gluten, Dairy", 15, 2),
+        ("Flapjacks with Fresh Fruits & Maple Syrup", "200g sirloin steak with roasted garlic butter, seasonal vegetables and choice of sauce", 70.0, "Breakfast",   "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=400&h=300&fit=crop", '["vegetarian"]',                 "Gluten, Eggs, Dairy", 15, 3),
+        ("Sunny Bowl",                        "Creamy yoghurt topped with crunchy granola, seasonal fresh fruit and a drizzle of honey",  100.0, "Breakfast",        "https://images.unsplash.com/photo-1577234286642-fc512a5f8f11?w=400&h=300&fit=crop", '["vegetarian","gluten_free"]',   "Dairy, Nuts", 5, 4),
+        ("Eglish Breakfast",                  "Two eggs cooked to your liking, crispy bacon, beef sausage, grilled tomato, mushrooms & toast", 145.0, "Breakfast",   "https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=400&h=300&fit=crop", '[]',                              "Gluten, Eggs, Dairy", 20, 5),
+        ("Egg on Toast",                      "Eggs cooked to your liking on toasted artisan bread, finished with fresh herbs",           72.0,  "Breakfast",        "https://images.unsplash.com/photo-1608039829572-78524f79c4c7?w=400&h=300&fit=crop", '["vegetarian"]',                 "Gluten, Eggs", 10, 6),
+        ("Extra Bread",                       "Brown Toast",                                                                              17.0,  "Breakfast",        "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&h=300&fit=crop", '["vegan"]',                       "Gluten", 5, 7),
+        ("Extra Bacon",                       "2 slices of crispy Bacon",                                                                 50.0,  "Breakfast",        "https://images.unsplash.com/photo-1528607929212-2636ec44253e?w=400&h=300&fit=crop", '[]',                              "", 5, 8),
+        ("Extra Baked Beans",                 "small side dish bowl with baked beans",                                                    25.0,  "Breakfast",        "https://images.unsplash.com/photo-1551462147-ff29053bfc14?w=400&h=300&fit=crop", '["vegan","gluten_free"]',         "", 5, 9),
+        ("Beef Saussage",                     "Extra Beef Saussage",                                                                      50.0,  "Breakfast",        "https://images.unsplash.com/photo-1585325701954-8e5dcf17eef7?w=400&h=300&fit=crop", '[]',                              "", 5, 10),
+        ("Extra Mushrooms",                   "small side bowl with fried mushrooms",                                                     25.0,  "Breakfast",        "https://images.unsplash.com/photo-1504545102780-26774c1bb073?w=400&h=300&fit=crop", '["vegan","gluten_free"]',         "", 5, 11),
+        ("Extra Honey",                       "",                                                                                          17.0,  "Breakfast",        "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=400&h=300&fit=crop", '["vegan","gluten_free"]',         "", 2, 12),
+        ("Extra Butter",                      "",                                                                                          17.0,  "Breakfast",        "https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=400&h=300&fit=crop", '["vegetarian","gluten_free"]',   "Dairy", 2, 13),
+        ("Extra Jam",                         "Apricot",                                                                                  17.0,  "Breakfast",        "https://images.unsplash.com/photo-1597528662465-55ece5734101?w=400&h=300&fit=crop", '["vegan","gluten_free"]',         "", 2, 14),
 
         # Drinks
-        ("Fresh Orange Juice", "Freshly squeezed orange juice (300ml)", 45.0, "drink", cat_ids["Drinks"], "https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?w=400&h=300&fit=crop", '["vegan","gluten_free"]', "None", 5, 1),
-        ("Pot of Coffee", "French press coffee for one with milk and sugar (250ml)", 55.0, "drink", cat_ids["Drinks"], "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400&h=300&fit=crop", '["vegetarian","gluten_free"]', "Dairy", 8, 2),
-        ("Herbal Tea Selection", "Choice of chamomile, rooibos, peppermint or green tea", 45.0, "drink", cat_ids["Drinks"], "https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=400&h=300&fit=crop", '["vegan","gluten_free"]', "None", 5, 3),
-        ("Still / Sparkling Water", "Bottled mineral water (500ml)", 35.0, "drink", cat_ids["Drinks"], "https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=400&h=300&fit=crop", '["vegan","gluten_free"]', "None", 2, 4),
-        ("Selection of Cold Drinks", "Coke, Coke Zero, Sprite, Fanta or Lemon Twist (330ml can)", 35.0, "drink", cat_ids["Drinks"], "https://images.unsplash.com/photo-1581636625402-29b2a704ef13?w=400&h=300&fit=crop", '["vegan","gluten_free"]', "None", 2, 5),
-        ("Mocktail", "Ask our bar team for today's featured alcohol-free mocktail", 75.0, "drink", cat_ids["Drinks"], "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=400&h=300&fit=crop", '["vegan","gluten_free"]', "None", 10, 6),
+        ("Single Espresso",                   "",                                                                                          30.0,  "Drinks",           "https://images.unsplash.com/photo-1510591509098-f4fdc6d0ff04?w=400&h=300&fit=crop", '["vegan","gluten_free"]',         "", 3, 1),
+        ("Double Espresso",                   "",                                                                                          31.0,  "Drinks",           "https://images.unsplash.com/photo-1510591509098-f4fdc6d0ff04?w=400&h=300&fit=crop", '["vegan","gluten_free"]',         "", 3, 2),
+        ("Espresso Macchiato",                "",                                                                                          35.0,  "Drinks",           "https://images.unsplash.com/photo-1485808191679-5f86510bd9d4?w=400&h=300&fit=crop", '["vegetarian","gluten_free"]',   "Dairy", 5, 3),
+        ("Americano",                         "",                                                                                          31.0,  "Drinks",           "https://images.unsplash.com/photo-1534778101976-62847782c213?w=400&h=300&fit=crop", '["vegan","gluten_free"]',         "", 5, 4),
+        ("Cappuccino",                        "Oat Milk available on request.",                                                           42.0,  "Drinks",           "https://images.unsplash.com/photo-1572442388796-11668a67e53d?w=400&h=300&fit=crop", '["vegetarian","gluten_free"]',   "Dairy", 5, 5),
+        ("Decaf Cappuccino",                  "Oat milk available on request",                                                            42.0,  "Drinks",           "https://images.unsplash.com/photo-1572442388796-11668a67e53d?w=400&h=300&fit=crop", '["vegetarian","gluten_free"]',   "Dairy", 5, 6),
+        ("Flat White",                        "",                                                                                          42.0,  "Drinks",           "https://images.unsplash.com/photo-1577968897966-3d4325b36b61?w=400&h=300&fit=crop", '["vegetarian","gluten_free"]',   "Dairy", 5, 7),
+        ("Caffe Latte",                       "",                                                                                          45.0,  "Drinks",           "https://images.unsplash.com/photo-1561882468-9110e03e0f78?w=400&h=300&fit=crop", '["vegetarian","gluten_free"]',   "Dairy", 5, 8),
+        ("Tea",                               "Rooibos, Camomile, Green & Ceylon",                                                        33.0,  "Drinks",           "https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=400&h=300&fit=crop", '["vegan","gluten_free"]',         "", 5, 9),
+        ("Hot Chocolate",                     "",                                                                                          47.0,  "Drinks",           "https://images.unsplash.com/photo-1542990253-0d0f5be5f0ed?w=400&h=300&fit=crop", '["vegetarian","gluten_free"]',   "Dairy", 5, 10),
+        ("Extra Oat Milk",                    "a Glass, or substitute for cow Milk",                                                      26.0,  "Drinks",           "https://images.unsplash.com/photo-1550583724-b2692b85b150?w=400&h=300&fit=crop", '["vegan","gluten_free"]',         "", 2, 11),
+        ("Fresh Squeezed Orange Juice",       "",                                                                                          42.0,  "Drinks",           "https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?w=400&h=300&fit=crop", '["vegan","gluten_free"]',         "", 5, 12),
+        ("Orange Juice",                      "",                                                                                          30.0,  "Drinks",           "https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?w=400&h=300&fit=crop", '["vegan","gluten_free"]',         "", 2, 13),
+        ("Cranberry Juice",                   "",                                                                                          30.0,  "Drinks",           "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=400&h=300&fit=crop", '["vegan","gluten_free"]',         "", 2, 14),
 
         # Cocktails & Wine
-        ("Gin & Tonic", "Premium local gin with tonic water, fresh lime and botanicals", 95.0, "cocktail", cat_ids["Cocktails & Wine"], "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=400&h=300&fit=crop", '["gluten_free"]', "None", 5, 1),
-        ("Aperol Spritz", "Aperol, Prosecco, splash of soda and orange slice", 110.0, "cocktail", cat_ids["Cocktails & Wine"], "https://images.unsplash.com/photo-1560512823-829485b8bf24?w=400&h=300&fit=crop", '["gluten_free"]', "Sulphites", 5, 2),
-        ("Glass of House Wine", "Ask about today's featured red or white (200ml)", 75.0, "cocktail", cat_ids["Cocktails & Wine"], "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=400&h=300&fit=crop", '["vegan","gluten_free"]', "Sulphites", 5, 3),
-        ("Craft Beer", "Local craft beer selection — ask about today's options (340ml)", 65.0, "cocktail", cat_ids["Cocktails & Wine"], "https://images.unsplash.com/photo-1608270586620-248524c67de9?w=400&h=300&fit=crop", '[]', "Gluten", 3, 4),
-        ("Whisky on the Rocks", "Premium South African or Scotch whisky over ice (30ml)", 125.0, "cocktail", cat_ids["Cocktails & Wine"], "https://images.unsplash.com/photo-1569529465841-dfecdab7503b?w=400&h=300&fit=crop", '["gluten_free"]', "None", 3, 5),
+        ("Mimosa",                            "",                                                                                         100.0,  "Cocktails & Wine", "https://images.unsplash.com/photo-1560512823-829485b8bf24?w=400&h=300&fit=crop", '["gluten_free"]',                 "Sulphites", 5, 1),
     ]
 
-    for name, desc, price, slug, cat_id, photo, tags, allergens, prep, order in items:
+    for name, desc, price, cat_key, photo, tags, allergens, prep, order in items:
         c.execute("""INSERT INTO menu_items
             (id, category_id, name, description, price, photo_url, dietary_tags, allergens, prep_time_minutes, is_available, display_order)
             VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (str(uuid.uuid4()), cat_id, name, desc, price, photo, tags, allergens, prep, 1, order))
+            (str(uuid.uuid4()), cat_ids[cat_key], name, desc, price, photo, tags, allergens, prep, 1, order))
 
     # ── Admin Users ───────────────────────────────────────────────────────────
     admin_users = [
-        (str(uuid.uuid4()), "Hotel Manager", "admin@hotel.com", hash_password("admin123"), "admin"),
+        (str(uuid.uuid4()), "Hotel Manager", "admin@hotel.com", hash_password("RoomS@TGH2026!"), "admin"),
         (str(uuid.uuid4()), "Kitchen Staff", "kitchen@hotel.com", hash_password("kitchen123"), "kitchen"),
         (str(uuid.uuid4()), "Bar Staff", "bar@hotel.com", hash_password("bar123"), "bar"),
     ]
