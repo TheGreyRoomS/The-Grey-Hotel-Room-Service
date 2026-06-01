@@ -136,6 +136,10 @@ button{cursor:pointer;border:none;font-family:inherit;}
 
 /* ── Option Groups ───────────────────────────────────────────────── */
 .option-group{margin:14px 0;}
+.oat-milk-label{display:flex;align-items:center;gap:10px;cursor:pointer;
+  font-family:'Georgia',serif;font-size:.88rem;color:var(--text);}
+.oat-milk-label input[type="checkbox"]{width:18px;height:18px;accent-color:var(--brown);cursor:pointer;}
+.oat-milk-label strong{color:var(--brown);}
 .option-group-label{font-size:.65rem;color:var(--brown);letter-spacing:2px;
   text-transform:uppercase;display:block;margin-bottom:8px;
   font-family:'Helvetica Neue',Arial,sans-serif;}
@@ -464,8 +468,17 @@ function openModal(item){
   const optionsEl=document.getElementById("modal-options");
   const opts=item.customisation_options||[];
   if(opts.length){
-    optionsEl.innerHTML=`<div class="modal-divider"></div>`+opts.map((group,gi)=>`
-      <div class="option-group">
+    optionsEl.innerHTML=`<div class="modal-divider"></div>`+opts.map((group,gi)=>{
+      if(group.type==="checkbox"){
+        return `<div class="option-group">
+          <label class="oat-milk-label">
+            <input type="checkbox" id="opt-cb-${gi}" data-group="${gi}" data-price="${group.price_add||0}"
+              onchange="updateModalPrice()">
+            <span>${group.label}${group.price_add?` <strong>(+R${group.price_add})</strong>`:''}</span>
+          </label>
+        </div>`;
+      }
+      return `<div class="option-group">
         <span class="option-group-label">${group.label}${group.required?' <span class="required-star">*</span>':''}</span>
         <div class="option-chips">
           ${group.options.map(opt=>`
@@ -473,7 +486,8 @@ function openModal(item){
               onclick="selectOption(this,${gi})">${opt}</button>
           `).join("")}
         </div>
-      </div>`).join("");
+      </div>`;
+    }).join("");
   } else {
     optionsEl.innerHTML="";
   }
@@ -486,6 +500,15 @@ function selectOption(btn,groupIndex){
   btn.classList.add("selected");
 }
 
+function updateModalPrice(){
+  if(!currentItem) return;
+  let extra=0;
+  document.querySelectorAll("[id^='opt-cb-']:checked").forEach(cb=>{ extra+=parseFloat(cb.dataset.price||0); });
+  const total=(currentItem.price+extra)*modalQty;
+  const priceEl=document.getElementById("modal-price-display");
+  if(priceEl) priceEl.textContent=`R ${total.toFixed(2)}`;
+}
+
 function closeModal(e){if(e.target===document.getElementById("modal-overlay"))closeModalBtn();}
 function closeModalBtn(){document.getElementById("modal-overlay").classList.remove("open");currentItem=null;}
 function changeQty(d){modalQty=Math.max(1,Math.min(10,modalQty+d));document.getElementById("modal-qty").textContent=modalQty;}
@@ -494,15 +517,25 @@ function addToCartFromModal(){
   if(!currentItem) return;
   const opts=currentItem.customisation_options||[];
   const selections=[];
+  let extraPrice=0;
   for(let gi=0;gi<opts.length;gi++){
     const group=opts[gi];
-    const selected=document.querySelector(`.option-chip[data-group="${gi}"].selected`);
-    if(group.required&&!selected){showToast(`Please select: ${group.label}`);return;}
-    if(selected) selections.push(`${group.label}: ${selected.dataset.value}`);
+    if(group.type==="checkbox"){
+      const cb=document.getElementById(`opt-cb-${gi}`);
+      if(cb&&cb.checked){
+        selections.push(group.label);
+        extraPrice+=parseFloat(group.price_add||0);
+      }
+    } else {
+      const selected=document.querySelector(`.option-chip[data-group="${gi}"].selected`);
+      if(group.required&&!selected){showToast(`Please select: ${group.label}`);return;}
+      if(selected) selections.push(`${group.label}: ${selected.dataset.value}`);
+    }
   }
   const userNotes=document.getElementById("modal-notes-input").value.trim();
   const allNotes=[...selections,...(userNotes?[userNotes]:[])].join(" | ");
-  addToCart(currentItem,modalQty,allNotes);
+  const itemWithPrice={...currentItem, price: currentItem.price+extraPrice};
+  addToCart(itemWithPrice,modalQty,allNotes);
   closeModalBtn();
   showToast(`${modalQty}× ${currentItem.name}`);
 }
