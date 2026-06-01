@@ -687,7 +687,7 @@ async function placeOrder(){
       const pr=await fetch(`${BASE}/api/payments/yoco/checkout`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:d.order_id})});
       const pd=await pr.json();
       if(pd.checkout_url){cart=[];updateCartBtn();window.location.href=pd.checkout_url;return;}
-      showToast(pd.error||"Payment error — please try again");btn.disabled=false;btn.textContent="Place Order";return;
+      showToast((pd.error||"Payment error")+": "+(pd.detail||""));btn.disabled=false;btn.textContent="Place Order";return;
     }
     cart=[]; updateCartBtn(); showConfirmation(d); setView("confirm");
   }catch(e){showToast("Network error — please try again");btn.disabled=false;btn.textContent="Place Order";}
