@@ -186,24 +186,10 @@ def _seed_data(conn):
     print("Seeding database with sample data...")
 
     # ── 13 Rooms ──────────────────────────────────────────────────────────────
-    rooms = [
-        ("1", "Garden View"),
-        ("2", "Mountain View"),
-        ("3", "Pool Suite"),
-        ("4", "Standard"),
-        ("5", "Deluxe Room"),
-        ("6", "Standard"),
-        ("7", "Balcony Room"),
-        ("8", "Balcony Room"),
-        ("9", "Corner Suite"),
-        ("10", "Standard"),
-        ("11", "Standard"),
-        ("12", "Honeymoon Suite"),
-        ("13", "Penthouse"),
-    ]
-    for num, name in rooms:
+    rooms = ["1","2","3","4","5","6","7","8","9","10","11","12","13"]
+    for num in rooms:
         c.execute("INSERT INTO rooms (id, room_number, name, qr_token) VALUES (?,?,?,?)",
-                  (str(uuid.uuid4()), num, name, generate_token()))
+                  (str(uuid.uuid4()), num, "", generate_token()))
 
     # ── Categories ────────────────────────────────────────────────────────────
     cats = [
