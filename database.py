@@ -104,6 +104,8 @@ def init_db():
         scheduled_for TEXT,
         order_notes TEXT,
         ip_address TEXT,
+        roomraccoon_reservation_number TEXT,
+        roomraccoon_charge_status TEXT,
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
     )""")
@@ -174,6 +176,18 @@ def init_db():
     )""")
 
     conn.commit()
+
+    # ── Migrations: add RoomRaccoon columns to existing databases ────────────
+    for migration_sql in [
+        "ALTER TABLE orders ADD COLUMN roomraccoon_reservation_number TEXT",
+        "ALTER TABLE orders ADD COLUMN roomraccoon_charge_status TEXT",
+    ]:
+        try:
+            c.execute(migration_sql)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists — safe to ignore
+
     _seed_data(conn)
     conn.close()
 
@@ -273,4 +287,4 @@ def _seed_data(conn):
 
     conn.commit()
     print("✓ Database seeded successfully")
-    print("  Admin login: admin@hotel.com / admin123")
+    print("  Admin login: admin@hotel.com / RoomS@TGH2026!")
