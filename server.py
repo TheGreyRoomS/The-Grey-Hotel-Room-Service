@@ -29,6 +29,31 @@ JWT_EXPIRY_HOURS = 12
 YOCO_SECRET_KEY = os.environ.get("YOCO_SECRET_KEY", "")
 YOCO_PUBLIC_KEY = os.environ.get("YOCO_PUBLIC_KEY", "")
 
+# ─── RoomRaccoon POS Integration ──────────────────────────────────────────────
+RR_POS_URL  = "https://api.roomraccoon.com/api/?type=POS&version=2"
+RR_API_KEY  = os.environ.get("RR_API_KEY",  "5ab3dea5f2fb68f02525")
+RR_HOTEL_ID = os.environ.get("RR_HOTEL_ID", "175626")
+
+# Revenue group IDs from RoomRaccoon (Finance → Revenue Groups)
+#   4918 — Food       Breakfast, Light Meals, Mains, Desserts
+#   4919 — Beverages  Non-alcoholic drinks & coffee
+#   4920 — Minibar    Cocktails & Wine
+RR_REVENUE_GROUPS = {
+    "food":      int(os.environ.get("RR_GROUP_FOOD",      "4918")),
+    "beverages": int(os.environ.get("RR_GROUP_BEVERAGES", "4919")),
+    "alcohol":   int(os.environ.get("RR_GROUP_ALCOHOL",   "4920")),
+}
+
+# Maps menu category name → revenue group key above
+RR_CATEGORY_MAP = {
+    "Breakfast":        "food",
+    "Light Meals":      "food",
+    "Mains":            "food",
+    "Desserts":         "food",
+    "Drinks":           "beverages",
+    "Cocktails & Wine": "alcohol",
+}
+
 # Track WebSocket connections for real-time order push
 _ws_clients = set()
 
@@ -119,6 +144,103 @@ def get_order_with_items(order_id, conn=None):
     return order
 
 
+# ─── RoomRaccoon POS helpers ──────────────────────────────────────────────────
+
+def _rr_post(payload_dict):
+    """POST JSON to the RoomRaccoon POS endpoint and return parsed response."""
+    payload = json.dumps(payload_dict).encode()
+    req = urllib.request.Request(
+        RR_POS_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=12)
+        return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        raise ValueError(f"RoomRaccoon HTTP {e.code}: {body}")
+
+
+def roomraccoon_verify_room(room_number):
+    """
+    Call VerifyRoomRequest to confirm the room is checked in.
+    Returns (reservation_number: str, guest_name: str).
+    Raises ValueError if the room is not occupied or the call fails.
+    """
+    result = _rr_post({
+        "apiKey":  RR_API_KEY,
+        "hotelId": RR_HOTEL_ID,
+        "VerifyRoomRequest": {
+            "VerifyType":  "RoomNumber",
+            "VerifyValue": str(room_number)
+        }
+    })
+
+    if result.get("Success") is False:
+        error = result.get("ErrorInfo") or "Room not found or not checked in"
+        raise ValueError(error)
+
+    # RoomRaccoon may use different casing; try all variants
+    reservation_number = (
+        result.get("ReservationNumber") or
+        result.get("reservation_number") or
+        result.get("reservationNumber") or
+        (result.get("Data") or {}).get("ReservationNumber") or
+        str(result.get("ReservationId", ""))
+    )
+    if not reservation_number:
+        raise ValueError("No reservation number returned by RoomRaccoon")
+
+    guest_name = (
+        result.get("GuestName") or
+        result.get("guestName") or
+        result.get("guest_name") or
+        (result.get("Data") or {}).get("GuestName") or
+        ""
+    )
+    return str(reservation_number), guest_name
+
+
+def roomraccoon_charge_room(reservation_number, room_number, order_item_rows, conn):
+    """
+    Call ChargeRoomRequest to post order items to the guest's RoomRaccoon invoice.
+
+    order_item_rows: list of tuples
+        (id, order_id, menu_item_id, item_name, item_price, quantity, line_total, notes)
+    """
+    ticket_details = []
+    for row in order_item_rows:
+        _id, _order_id, menu_item_id, item_name, item_price, quantity, line_total, _notes = row
+
+        # Resolve category → revenue group
+        cat_row = conn.execute(
+            "SELECT c.name FROM menu_items mi JOIN categories c ON mi.category_id = c.id WHERE mi.id = ?",
+            (menu_item_id,)
+        ).fetchone()
+        cat_name = cat_row[0] if cat_row else "Mains"
+        group_key = RR_CATEGORY_MAP.get(cat_name, "food")
+        revenue_group = RR_REVENUE_GROUPS[group_key]
+
+        ticket_details.append({
+            "Description":  item_name,
+            "Amount":       round(float(line_total), 2),
+            "Quantity":     int(quantity),
+            "RevenueGroup": revenue_group
+        })
+
+    return _rr_post({
+        "apiKey":  RR_API_KEY,
+        "hotelId": RR_HOTEL_ID,
+        "ChargeRoomRequest": {
+            "ReservationNumber": str(reservation_number),
+            "RoomNumber":        str(room_number),
+            "TicketDetails":     ticket_details
+        }
+    })
+
+
 # ─── Base Handler ─────────────────────────────────────────────────────────────
 
 class BaseHandler(tornado.web.RequestHandler):
@@ -170,7 +292,6 @@ class GuestAppHandler(BaseHandler):
             self.render_error("Invalid or expired QR code. Please contact reception.")
             return
 
-        # Serve the guest HTML
         public_dir = os.path.join(os.path.dirname(__file__), "public")
         with open(os.path.join(public_dir, "guest.html"), "r") as f:
             html = f.read()
@@ -263,12 +384,15 @@ class ApiOrdersHandler(BaseHandler):
         """Create a new order from a guest."""
         body = self.json_body()
         room_num = body.get("room_number", "")
-        token = body.get("token", "")
+        token    = body.get("token", "")
 
-        # Validate room
+        # ── Validate room ──────────────────────────────────────────────────────
         conn = get_db()
         room = db_row_to_dict(
-            conn.execute("SELECT * FROM rooms WHERE room_number=? AND qr_token=? AND is_active=1", (room_num, token)).fetchone()
+            conn.execute(
+                "SELECT * FROM rooms WHERE room_number=? AND qr_token=? AND is_active=1",
+                (room_num, token)
+            ).fetchone()
         )
         if not room:
             conn.close()
@@ -287,27 +411,41 @@ class ApiOrdersHandler(BaseHandler):
             json_response(self, {"error": "Invalid payment method"}, 400)
             return
 
-        # Validate charge-to-room
         if payment_method == "charge_to_room" and not room["charge_to_room_enabled"]:
             conn.close()
             json_response(self, {"error": "Charge to room is not available for this room"}, 400)
             return
 
-        # Build order
-        order_id = str(uuid.uuid4())
+        # ── For charge-to-room: verify guest is checked in with RoomRaccoon ───
+        rr_reservation_number = None
+        if payment_method == "charge_to_room":
+            try:
+                rr_reservation_number, rr_guest = roomraccoon_verify_room(room_num)
+            except Exception as e:
+                conn.close()
+                json_response(self, {
+                    "error": "Charge to room is currently unavailable — please contact reception.",
+                    "detail": str(e)
+                }, 400)
+                return
+
+        # ── Build order ────────────────────────────────────────────────────────
+        order_id  = str(uuid.uuid4())
         order_ref = f"RS-{datetime.now().strftime('%y%m%d')}-{order_id[:4].upper()}"
-        subtotal = 0.0
+        subtotal  = 0.0
         order_item_rows = []
 
         for ci in cart_items:
             item = db_row_to_dict(
-                conn.execute("SELECT * FROM menu_items WHERE id=? AND is_available=1", (ci["id"],)).fetchone()
+                conn.execute(
+                    "SELECT * FROM menu_items WHERE id=? AND is_available=1", (ci["id"],)
+                ).fetchone()
             )
             if not item:
                 continue
-            qty = max(1, int(ci.get("quantity", 1)))
+            qty        = max(1, int(ci.get("quantity", 1)))
             line_total = round(item["price"] * qty, 2)
-            subtotal += line_total
+            subtotal  += line_total
             order_item_rows.append((
                 str(uuid.uuid4()), order_id, item["id"],
                 item["name"], item["price"], qty, line_total,
@@ -326,38 +464,58 @@ class ApiOrdersHandler(BaseHandler):
 
         payment_status = "pending" if payment_method == "card" else "pending_settlement"
 
+        # ── Save order ─────────────────────────────────────────────────────────
         conn.execute("""INSERT INTO orders
             (id, order_reference, room_id, guest_name, status, payment_method,
              payment_status, subtotal, total_amount, delivery_type, scheduled_for,
-             order_notes, ip_address)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             order_notes, ip_address, roomraccoon_reservation_number)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (order_id, order_ref, room["id"], body.get("guest_name", ""),
              "received", payment_method, payment_status,
              subtotal, subtotal,
              body.get("delivery_type", "asap"), body.get("scheduled_for"),
              body.get("order_notes", ""),
-             self.request.remote_ip))
+             self.request.remote_ip,
+             rr_reservation_number))
 
         for row in order_item_rows:
             conn.execute("""INSERT INTO order_items
                 (id, order_id, menu_item_id, item_name, item_price, quantity, line_total, notes)
                 VALUES (?,?,?,?,?,?,?,?)""", row)
 
-        # Status history
         conn.execute("""INSERT INTO order_status_history (id, order_id, from_status, to_status)
             VALUES (?,?,?,?)""", (str(uuid.uuid4()), order_id, None, "received"))
 
-        # Payment record
         conn.execute("""INSERT INTO payments (id, order_id, gateway, amount, status)
             VALUES (?,?,?,?,?)""",
             (str(uuid.uuid4()), order_id,
-             "manual" if payment_method == "charge_to_room" else "yoco",
+             "roomraccoon" if payment_method == "charge_to_room" else "yoco",
              subtotal,
              "pending_settlement" if payment_method == "charge_to_room" else "pending"))
 
         conn.commit()
 
-        # Calc max prep time for ETA
+        # ── Post to RoomRaccoon ────────────────────────────────────────────────
+        if payment_method == "charge_to_room" and rr_reservation_number:
+            try:
+                roomraccoon_charge_room(rr_reservation_number, room_num, order_item_rows, conn)
+                # Mark as successfully posted to PMS
+                conn.execute(
+                    "UPDATE orders SET roomraccoon_charge_status='posted', updated_at=? WHERE id=?",
+                    (datetime.now().isoformat(), order_id)
+                )
+                conn.commit()
+                print(f"✓ RoomRaccoon: charged reservation {rr_reservation_number} for order {order_ref} (R{subtotal:.2f})")
+            except Exception as e:
+                # Don't cancel the order — flag for manual posting by staff
+                conn.execute(
+                    "UPDATE orders SET roomraccoon_charge_status='failed', updated_at=? WHERE id=?",
+                    (datetime.now().isoformat(), order_id)
+                )
+                conn.commit()
+                print(f"⚠ RoomRaccoon charge FAILED for order {order_ref}: {e}")
+
+        # Calc ETA
         max_prep = 30
         if order_item_rows:
             ids = [r[2] for r in order_item_rows if r[2]]
@@ -372,16 +530,15 @@ class ApiOrdersHandler(BaseHandler):
         full_order = get_order_with_items(order_id, conn)
         conn.close()
 
-        # Broadcast to admin WebSocket clients
         broadcast_order_update(full_order)
 
         json_response(self, {
-            "order_id": order_id,
-            "order_reference": order_ref,
-            "status": "received",
+            "order_id":         order_id,
+            "order_reference":  order_ref,
+            "status":           "received",
             "estimated_minutes": max_prep + 10,
-            "payment_method": payment_method,
-            "total_amount": subtotal,
+            "payment_method":   payment_method,
+            "total_amount":     subtotal,
         }, 201)
 
 
@@ -389,7 +546,10 @@ class ApiOrderStatusHandler(BaseHandler):
     def get(self, order_id):
         conn = get_db()
         order = db_row_to_dict(
-            conn.execute("SELECT id, order_reference, status, payment_status, total_amount, created_at FROM orders WHERE id=?", (order_id,)).fetchone()
+            conn.execute(
+                "SELECT id, order_reference, status, payment_status, total_amount, created_at FROM orders WHERE id=?",
+                (order_id,)
+            ).fetchone()
         )
         conn.close()
         if not order:
@@ -418,11 +578,11 @@ class ApiCreateYocoCheckoutHandler(BaseHandler):
         base_url = self.request.protocol + "://" + self.request.host
 
         payload = json.dumps({
-            "amount": amount_cents,
-            "currency": "ZAR",
+            "amount":    amount_cents,
+            "currency":  "ZAR",
             "successUrl": f"{base_url}/payment-success?order_id={order_id}",
-            "cancelUrl": f"{base_url}/payment-cancel?order_id={order_id}",
-            "metadata": {"orderId": order_id, "orderRef": order.get("order_reference", "")}
+            "cancelUrl":  f"{base_url}/payment-cancel?order_id={order_id}",
+            "metadata":  {"orderId": order_id, "orderRef": order.get("order_reference", "")}
         }).encode()
 
         req = urllib.request.Request(
@@ -430,7 +590,7 @@ class ApiCreateYocoCheckoutHandler(BaseHandler):
             data=payload,
             headers={
                 "Authorization": f"Bearer {YOCO_SECRET_KEY}",
-                "Content-Type": "application/json",
+                "Content-Type":  "application/json",
             },
             method="POST",
         )
@@ -457,17 +617,21 @@ class ApiYocoWebhookHandler(BaseHandler):
             return
 
         event_type = event.get("type", "")
-        payload = event.get("payload", {})
+        payload    = event.get("payload", {})
 
         if event_type == "payment.succeeded":
             metadata = payload.get("metadata", {})
             order_id = metadata.get("orderId")
             if order_id:
                 conn = get_db()
-                conn.execute("UPDATE orders SET payment_status='paid', status='received', updated_at=? WHERE id=?",
-                             (datetime.now().isoformat(), order_id))
-                conn.execute("UPDATE payments SET status='succeeded', paid_at=?, gateway_reference=? WHERE order_id=?",
-                             (datetime.now().isoformat(), payload.get("id", ""), order_id))
+                conn.execute(
+                    "UPDATE orders SET payment_status='paid', status='received', updated_at=? WHERE id=?",
+                    (datetime.now().isoformat(), order_id)
+                )
+                conn.execute(
+                    "UPDATE payments SET status='succeeded', paid_at=?, gateway_reference=? WHERE order_id=?",
+                    (datetime.now().isoformat(), payload.get("id", ""), order_id)
+                )
                 conn.commit()
                 full_order = get_order_with_items(order_id, conn)
                 conn.close()
@@ -479,16 +643,18 @@ class ApiYocoWebhookHandler(BaseHandler):
 
 
 class ApiPaymentSuccessHandler(BaseHandler):
-    """Guest lands here after successful Yoco payment."""
     def get(self):
         order_id = self.get_argument("order_id", "")
-        # Yoco may also confirm via webhook; mark paid here as backup
         if order_id:
             conn = get_db()
-            conn.execute("UPDATE orders SET payment_status='paid', status='received', updated_at=? WHERE id=?",
-                         (datetime.now().isoformat(), order_id))
-            conn.execute("UPDATE payments SET status='succeeded', paid_at=? WHERE order_id=? AND status='pending'",
-                         (datetime.now().isoformat(), order_id))
+            conn.execute(
+                "UPDATE orders SET payment_status='paid', status='received', updated_at=? WHERE id=?",
+                (datetime.now().isoformat(), order_id)
+            )
+            conn.execute(
+                "UPDATE payments SET status='succeeded', paid_at=? WHERE order_id=? AND status='pending'",
+                (datetime.now().isoformat(), order_id)
+            )
             conn.commit()
             full_order = get_order_with_items(order_id, conn)
             conn.close()
@@ -501,9 +667,7 @@ class ApiPaymentSuccessHandler(BaseHandler):
 min-height:100vh;margin:0;background:#f5f5f0;}
 .card{background:white;padding:2.5rem;border-radius:16px;max-width:360px;text-align:center;
 box-shadow:0 4px 20px rgba(0,0,0,.1);}
-h2{color:#2A2A2A;} p{color:#666;}
-.btn{display:inline-block;margin-top:1rem;padding:12px 28px;background:#B8973A;color:white;
-border-radius:30px;text-decoration:none;font-weight:bold;}</style></head>
+h2{color:#2A2A2A;} p{color:#666;}</style></head>
 <body><div class="card"><div style="font-size:3rem">✅</div>
 <h2>Payment Successful</h2>
 <p>Your order has been received. We'll deliver it to your room shortly.</p>
@@ -512,7 +676,6 @@ border-radius:30px;text-decoration:none;font-weight:bold;}</style></head>
 
 
 class ApiPaymentCancelHandler(BaseHandler):
-    """Guest lands here if they cancel the Yoco payment."""
     def get(self):
         self.write("""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -521,13 +684,10 @@ class ApiPaymentCancelHandler(BaseHandler):
 min-height:100vh;margin:0;background:#f5f5f0;}
 .card{background:white;padding:2.5rem;border-radius:16px;max-width:360px;text-align:center;
 box-shadow:0 4px 20px rgba(0,0,0,.1);}
-h2{color:#2A2A2A;} p{color:#666;}
-.btn{display:inline-block;margin-top:1rem;padding:12px 28px;background:#B8973A;color:white;
-border-radius:30px;text-decoration:none;font-weight:bold;}</style></head>
+h2{color:#2A2A2A;} p{color:#666;}</style></head>
 <body><div class="card"><div style="font-size:3rem">❌</div>
 <h2>Payment Cancelled</h2>
 <p>Your payment was not completed. Please go back and try again.</p>
-<p style="font-size:.85rem;color:#999;">You can close this window and retry.</p>
 </div></body></html>""")
 
 
@@ -535,16 +695,20 @@ border-radius:30px;text-decoration:none;font-weight:bold;}</style></head>
 
 class ApiAdminLoginHandler(BaseHandler):
     def post(self):
-        body = self.json_body()
-        email = body.get("email", "")
-        password = body.get("password", "")
+        body    = self.json_body()
+        email   = body.get("email", "")
+        password= body.get("password", "")
         pw_hash = hash_password(password)
-        conn = get_db()
-        user = db_row_to_dict(
-            conn.execute("SELECT * FROM admin_users WHERE email=? AND password_hash=? AND is_active=1", (email, pw_hash)).fetchone()
+        conn    = get_db()
+        user    = db_row_to_dict(
+            conn.execute(
+                "SELECT * FROM admin_users WHERE email=? AND password_hash=? AND is_active=1",
+                (email, pw_hash)
+            ).fetchone()
         )
         if user:
-            conn.execute("UPDATE admin_users SET last_login_at=? WHERE id=?", (datetime.now().isoformat(), user["id"]))
+            conn.execute("UPDATE admin_users SET last_login_at=? WHERE id=?",
+                         (datetime.now().isoformat(), user["id"]))
             conn.commit()
         conn.close()
         if not user:
@@ -585,14 +749,14 @@ class ApiAdminOrderStatusHandler(BaseHandler):
         user = self.require_auth()
         if not user:
             return
-        body = self.json_body()
+        body       = self.json_body()
         new_status = body.get("status")
-        note = body.get("note", "")
+        note       = body.get("note", "")
         valid = ["received", "accepted", "preparing", "delivered", "cancelled"]
         if new_status not in valid:
             json_response(self, {"error": "Invalid status"}, 400)
             return
-        conn = get_db()
+        conn  = get_db()
         order = db_row_to_dict(conn.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone())
         if not order:
             conn.close()
@@ -611,10 +775,78 @@ class ApiAdminOrderStatusHandler(BaseHandler):
         json_response(self, {"success": True, "order": full_order})
 
 
+# ─── Admin: Retry RoomRaccoon Charge ─────────────────────────────────────────
+
+class ApiAdminRetryRoomRaccoonHandler(BaseHandler):
+    """
+    Allows admin to manually retry a failed RoomRaccoon charge.
+    POST /api/admin/orders/<order_id>/retry-roomraccoon
+    """
+    def post(self, order_id):
+        user = self.require_auth(["admin", "manager"])
+        if not user:
+            return
+        conn  = get_db()
+        order = db_row_to_dict(
+            conn.execute("SELECT o.*, r.room_number FROM orders o JOIN rooms r ON o.room_id=r.id WHERE o.id=?",
+                         (order_id,)).fetchone()
+        )
+        if not order:
+            conn.close()
+            json_response(self, {"error": "Order not found"}, 404)
+            return
+        if order.get("payment_method") != "charge_to_room":
+            conn.close()
+            json_response(self, {"error": "Not a charge-to-room order"}, 400)
+            return
+
+        room_num = order["room_number"]
+        reservation_number = order.get("roomraccoon_reservation_number")
+
+        # Re-verify if we don't have a reservation number
+        if not reservation_number:
+            try:
+                reservation_number, _ = roomraccoon_verify_room(room_num)
+                conn.execute("UPDATE orders SET roomraccoon_reservation_number=? WHERE id=?",
+                             (reservation_number, order_id))
+                conn.commit()
+            except Exception as e:
+                conn.close()
+                json_response(self, {"error": f"Room verification failed: {e}"}, 400)
+                return
+
+        # Fetch order items
+        items = conn.execute(
+            "SELECT * FROM order_items WHERE order_id=?", (order_id,)
+        ).fetchall()
+        item_rows = [
+            (r["id"], r["order_id"], r["menu_item_id"], r["item_name"],
+             r["item_price"], r["quantity"], r["line_total"], r["notes"])
+            for r in items
+        ]
+
+        try:
+            roomraccoon_charge_room(reservation_number, room_num, item_rows, conn)
+            conn.execute(
+                "UPDATE orders SET roomraccoon_charge_status='posted', updated_at=? WHERE id=?",
+                (datetime.now().isoformat(), order_id)
+            )
+            conn.commit()
+            conn.close()
+            json_response(self, {"success": True, "message": "Successfully posted to RoomRaccoon"})
+        except Exception as e:
+            conn.execute(
+                "UPDATE orders SET roomraccoon_charge_status='failed', updated_at=? WHERE id=?",
+                (datetime.now().isoformat(), order_id)
+            )
+            conn.commit()
+            conn.close()
+            json_response(self, {"success": False, "error": str(e)}, 500)
+
+
 # ─── Admin Menu API ───────────────────────────────────────────────────────────
 
 class ApiAdminUploadPhotoHandler(BaseHandler):
-    """Handle menu item photo uploads — saves to public/uploads/"""
     def post(self):
         user = self.require_auth()
         if not user:
@@ -631,23 +863,20 @@ class ApiAdminUploadPhotoHandler(BaseHandler):
             json_response(self, {"error": "No photo field in upload"}, 400)
             return
 
-        # Validate file type
         content_type = file_info.get("content_type", "")
         if not content_type.startswith("image/"):
             json_response(self, {"error": "Only image files are allowed"}, 400)
             return
 
-        # Generate unique filename keeping original extension
-        ext = mimetypes.guess_extension(content_type) or ".jpg"
-        ext = ext.replace(".jpe", ".jpg")  # normalise jpeg extension
+        ext      = mimetypes.guess_extension(content_type) or ".jpg"
+        ext      = ext.replace(".jpe", ".jpg")
         filename = f"{uuid.uuid4().hex}{ext}"
         filepath = os.path.join(upload_dir, filename)
 
         with open(filepath, "wb") as f:
             f.write(file_info["body"])
 
-        url = f"/static/uploads/{filename}"
-        json_response(self, {"url": url})
+        json_response(self, {"url": f"/static/uploads/{filename}"})
 
 
 class ApiAdminMenuItemsHandler(BaseHandler):
@@ -657,7 +886,9 @@ class ApiAdminMenuItemsHandler(BaseHandler):
             return
         conn = get_db()
         items = db_rows_to_list(
-            conn.execute("SELECT mi.*, c.name as category_name FROM menu_items mi JOIN categories c ON mi.category_id=c.id ORDER BY mi.display_order").fetchall()
+            conn.execute(
+                "SELECT mi.*, c.name as category_name FROM menu_items mi JOIN categories c ON mi.category_id=c.id ORDER BY mi.display_order"
+            ).fetchall()
         )
         categories = db_rows_to_list(conn.execute("SELECT * FROM categories ORDER BY display_order").fetchall())
         conn.close()
@@ -673,14 +904,13 @@ class ApiAdminMenuItemsHandler(BaseHandler):
         if not user:
             return
         body = self.json_body()
-        required = ["name", "category_id", "price"]
-        for f in required:
+        for f in ["name", "category_id", "price"]:
             if not body.get(f):
                 json_response(self, {"error": f"Missing field: {f}"}, 400)
                 return
         item_id = str(uuid.uuid4())
-        tags = json.dumps(body.get("dietary_tags", []))
-        conn = get_db()
+        tags    = json.dumps(body.get("dietary_tags", []))
+        conn    = get_db()
         conn.execute("""INSERT INTO menu_items
             (id, category_id, name, description, price, photo_url, dietary_tags, allergens, prep_time_minutes, is_available, display_order)
             VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
@@ -714,16 +944,16 @@ class ApiAdminMenuItemHandler(BaseHandler):
             category_id=?, name=?, description=?, price=?, photo_url=?,
             dietary_tags=?, allergens=?, prep_time_minutes=?, is_available=?,
             display_order=?, updated_at=? WHERE id=?""",
-            (body.get("category_id", item["category_id"]),
-             body.get("name", item["name"]),
-             body.get("description", item["description"]),
-             float(body.get("price", item["price"])),
-             body.get("photo_url", item["photo_url"]),
+            (body.get("category_id",        item["category_id"]),
+             body.get("name",               item["name"]),
+             body.get("description",        item["description"]),
+             float(body.get("price",        item["price"])),
+             body.get("photo_url",          item["photo_url"]),
              tags,
-             body.get("allergens", item["allergens"]),
+             body.get("allergens",          item["allergens"]),
              int(body.get("prep_time_minutes", item["prep_time_minutes"])),
-             1 if body.get("is_available", bool(item["is_available"])) else 0,
-             int(body.get("display_order", item["display_order"])),
+             1 if body.get("is_available",  bool(item["is_available"])) else 0,
+             int(body.get("display_order",  item["display_order"])),
              datetime.now().isoformat(), item_id))
         conn.commit()
         updated = db_row_to_dict(conn.execute("SELECT * FROM menu_items WHERE id=?", (item_id,)).fetchone())
@@ -767,15 +997,13 @@ class ApiAdminRoomsHandler(BaseHandler):
         user = self.require_auth()
         if not user:
             return
-        conn = get_db()
+        conn  = get_db()
         rooms = db_rows_to_list(conn.execute("SELECT * FROM rooms ORDER BY CAST(room_number AS INTEGER)").fetchall())
-        # Add last order time per room
         for room in rooms:
             last = conn.execute(
                 "SELECT created_at FROM orders WHERE room_id=? ORDER BY created_at DESC LIMIT 1", (room["id"],)
             ).fetchone()
             room["last_order_at"] = last["created_at"] if last else None
-            # Include QR URL
             base = self.request.protocol + "://" + self.request.host
             room["qr_url"] = f"{base}/room-service?room={room['room_number']}&token={room['qr_token']}"
         conn.close()
@@ -805,9 +1033,9 @@ class ApiAdminReportsHandler(BaseHandler):
         user = self.require_auth()
         if not user:
             return
-        days = int(self.get_argument("days", 30))
+        days  = int(self.get_argument("days", 30))
         since = (datetime.now() - timedelta(days=days)).isoformat()
-        conn = get_db()
+        conn  = get_db()
 
         total_revenue = conn.execute(
             "SELECT COALESCE(SUM(total_amount),0) FROM orders WHERE created_at>=? AND status!='cancelled'", (since,)
@@ -848,14 +1076,14 @@ class ApiAdminReportsHandler(BaseHandler):
 
         conn.close()
         json_response(self, {
-            "total_revenue": round(total_revenue, 2),
-            "total_orders": total_orders,
-            "avg_order_value": round(avg_order, 2),
-            "top_items": top_items,
+            "total_revenue":    round(total_revenue, 2),
+            "total_orders":     total_orders,
+            "avg_order_value":  round(avg_order, 2),
+            "top_items":        top_items,
             "by_payment_method": by_payment,
-            "by_room": by_room,
-            "daily": daily,
-            "days": days,
+            "by_room":          by_room,
+            "daily":            daily,
+            "days":             days,
         })
 
 
@@ -866,7 +1094,7 @@ class ApiAdminHoursHandler(BaseHandler):
         user = self.require_auth()
         if not user:
             return
-        conn = get_db()
+        conn  = get_db()
         hours = db_rows_to_list(conn.execute("SELECT * FROM operating_hours ORDER BY day_of_week").fetchall())
         conn.close()
         json_response(self, hours)
@@ -875,7 +1103,7 @@ class ApiAdminHoursHandler(BaseHandler):
         user = self.require_auth(["admin", "manager"])
         if not user:
             return
-        body = self.json_body()  # list of hour objects
+        body = self.json_body()
         conn = get_db()
         for h in body:
             conn.execute("""UPDATE operating_hours SET open_time=?, close_time=?, is_open=?, closed_message=?
@@ -893,12 +1121,11 @@ class ApiAdminHoursHandler(BaseHandler):
 
 class OrderWebSocketHandler(tornado.websocket.WebSocketHandler):
     def check_origin(self, origin):
-        return True  # Allow any origin (restrict in production)
+        return True
 
     def open(self):
-        # Validate JWT from query param
         token = self.get_argument("token", "")
-        user = decode_jwt(token)
+        user  = decode_jwt(token)
         if not user:
             self.close(code=4001, reason="Unauthorised")
             return
@@ -909,7 +1136,7 @@ class OrderWebSocketHandler(tornado.websocket.WebSocketHandler):
         _ws_clients.discard(self)
 
     def on_message(self, message):
-        pass  # Client → server messages not needed currently
+        pass
 
 
 # ─── App ─────────────────────────────────────────────────────────────────────
@@ -918,34 +1145,35 @@ def make_app():
     public_dir = os.path.join(os.path.dirname(__file__), "public")
     return tornado.web.Application([
         # Guest
-        (r"/room-service", GuestAppHandler),
-        (r"/api/menu", ApiMenuHandler),
-        (r"/api/menu/items/([^/]+)", ApiMenuItemHandler),
-        (r"/api/kitchen-status", ApiKitchenStatusHandler),
-        (r"/api/operating-hours", ApiOperatingHoursPublicHandler),
-        (r"/api/orders", ApiOrdersHandler),
-        (r"/api/orders/([^/]+)/status", ApiOrderStatusHandler),
-        (r"/api/payments/yoco/checkout", ApiCreateYocoCheckoutHandler),
-        (r"/api/payments/yoco/webhook", ApiYocoWebhookHandler),
-        (r"/payment-success", ApiPaymentSuccessHandler),
-        (r"/payment-cancel", ApiPaymentCancelHandler),
+        (r"/room-service",                              GuestAppHandler),
+        (r"/api/menu",                                  ApiMenuHandler),
+        (r"/api/menu/items/([^/]+)",                    ApiMenuItemHandler),
+        (r"/api/kitchen-status",                        ApiKitchenStatusHandler),
+        (r"/api/operating-hours",                       ApiOperatingHoursPublicHandler),
+        (r"/api/orders",                                ApiOrdersHandler),
+        (r"/api/orders/([^/]+)/status",                 ApiOrderStatusHandler),
+        (r"/api/payments/yoco/checkout",                ApiCreateYocoCheckoutHandler),
+        (r"/api/payments/yoco/webhook",                 ApiYocoWebhookHandler),
+        (r"/payment-success",                           ApiPaymentSuccessHandler),
+        (r"/payment-cancel",                            ApiPaymentCancelHandler),
 
         # Admin
-        (r"/admin/?", AdminAppHandler),
-        (r"/api/admin/login", ApiAdminLoginHandler),
-        (r"/api/admin/orders", ApiAdminOrdersHandler),
-        (r"/api/admin/orders/([^/]+)/status", ApiAdminOrderStatusHandler),
-        (r"/api/admin/menu-items/upload-photo", ApiAdminUploadPhotoHandler),
-        (r"/api/admin/menu-items", ApiAdminMenuItemsHandler),
-        (r"/api/admin/menu-items/([^/]+)", ApiAdminMenuItemHandler),
-        (r"/api/admin/menu-items/([^/]+)/toggle", ApiAdminToggleAvailabilityHandler),
-        (r"/api/admin/rooms", ApiAdminRoomsHandler),
-        (r"/api/admin/rooms/([^/]+)/regenerate-token", ApiAdminRegenerateTokenHandler),
-        (r"/api/admin/reports", ApiAdminReportsHandler),
-        (r"/api/admin/hours", ApiAdminHoursHandler),
+        (r"/admin/?",                                   AdminAppHandler),
+        (r"/api/admin/login",                           ApiAdminLoginHandler),
+        (r"/api/admin/orders",                          ApiAdminOrdersHandler),
+        (r"/api/admin/orders/([^/]+)/status",           ApiAdminOrderStatusHandler),
+        (r"/api/admin/orders/([^/]+)/retry-roomraccoon",ApiAdminRetryRoomRaccoonHandler),
+        (r"/api/admin/menu-items/upload-photo",         ApiAdminUploadPhotoHandler),
+        (r"/api/admin/menu-items",                      ApiAdminMenuItemsHandler),
+        (r"/api/admin/menu-items/([^/]+)",              ApiAdminMenuItemHandler),
+        (r"/api/admin/menu-items/([^/]+)/toggle",       ApiAdminToggleAvailabilityHandler),
+        (r"/api/admin/rooms",                           ApiAdminRoomsHandler),
+        (r"/api/admin/rooms/([^/]+)/regenerate-token",  ApiAdminRegenerateTokenHandler),
+        (r"/api/admin/reports",                         ApiAdminReportsHandler),
+        (r"/api/admin/hours",                           ApiAdminHoursHandler),
 
         # WebSocket
-        (r"/ws/orders", OrderWebSocketHandler),
+        (r"/ws/orders",                                 OrderWebSocketHandler),
 
         # Static files
         (r"/static/(.*)", tornado.web.StaticFileHandler, {"path": public_dir}),
@@ -962,12 +1190,6 @@ if __name__ == "__main__":
     app.listen(PORT)
     print(f"✓ Server running at http://localhost:{PORT}")
     print(f"  Admin panel:  http://localhost:{PORT}/admin")
-    print(f"  Guest app:    http://localhost:{PORT}/room-service?room=1&token=<token>")
-    print(f"  (Get room tokens from the admin panel → QR Codes)")
-    print("─" * 40)
-    print("  Admin logins:")
-    print("    admin@hotel.com   / admin123  (full access)")
-    print("    kitchen@hotel.com / kitchen123")
-    print("    bar@hotel.com     / bar123")
+    print(f"  RoomRaccoon:  Hotel ID {RR_HOTEL_ID} — Charge-to-room ACTIVE")
     print("─" * 40)
     tornado.ioloop.IOLoop.current().start()
