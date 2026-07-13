@@ -12,13 +12,12 @@ import mimetypes
 import os
 import hashlib
 import sqlite3
-import urllib.request
-import urllib.error
 from datetime import datetime, timedelta
 
 import tornado.ioloop
 import tornado.web
 import tornado.websocket
+from tornado.httpclient import AsyncHTTPClient, HTTPRequest, HTTPError as TornadoHTTPError
 import jwt
 
 from database import init_db, ensure_admin_password, get_db, hash_password, generate_token, DB_PATH
@@ -146,30 +145,31 @@ def get_order_with_items(order_id, conn=None):
 
 # ─── RoomRaccoon POS helpers ──────────────────────────────────────────────────
 
-def _rr_post(payload_dict):
+async def _rr_post(payload_dict):
     """POST JSON to the RoomRaccoon POS endpoint and return parsed response."""
     payload = json.dumps(payload_dict).encode()
-    req = urllib.request.Request(
+    request = HTTPRequest(
         RR_POS_URL,
-        data=payload,
+        method="POST",
+        body=payload,
         headers={"Content-Type": "application/json"},
-        method="POST"
+        request_timeout=12.0,
     )
     try:
-        resp = urllib.request.urlopen(req, timeout=12)
-        return json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        body = e.read().decode()
+        resp = await AsyncHTTPClient().fetch(request)
+        return json.loads(resp.body)
+    except TornadoHTTPError as e:
+        body = e.response.body.decode() if e.response else str(e)
         raise ValueError(f"RoomRaccoon HTTP {e.code}: {body}")
 
 
-def roomraccoon_verify_room(room_number):
+async def roomraccoon_verify_room(room_number):
     """
     Call VerifyRoomRequest to confirm the room is checked in.
     Returns (reservation_number: str, guest_name: str).
     Raises ValueError if the room is not occupied or the call fails.
     """
-    result = _rr_post({
+    result = await _rr_post({
         "apiKey":  RR_API_KEY,
         "hotelId": RR_HOTEL_ID,
         "VerifyRoomRequest": {
@@ -203,7 +203,7 @@ def roomraccoon_verify_room(room_number):
     return str(reservation_number), guest_name
 
 
-def roomraccoon_charge_room(reservation_number, room_number, order_item_rows, conn):
+async def roomraccoon_charge_room(reservation_number, room_number, order_item_rows, conn):
     """
     Call ChargeRoomRequest to post order items to the guest's RoomRaccoon invoice.
 
@@ -230,7 +230,7 @@ def roomraccoon_charge_room(reservation_number, room_number, order_item_rows, co
             "RevenueGroup": revenue_group
         })
 
-    return _rr_post({
+    return await _rr_post({
         "apiKey":  RR_API_KEY,
         "hotelId": RR_HOTEL_ID,
         "ChargeRoomRequest": {
@@ -380,7 +380,7 @@ class ApiOperatingHoursPublicHandler(BaseHandler):
 
 
 class ApiOrdersHandler(BaseHandler):
-    def post(self):
+    async def post(self):
         """Create a new order from a guest."""
         body = self.json_body()
         room_num = body.get("room_number", "")
@@ -420,7 +420,7 @@ class ApiOrdersHandler(BaseHandler):
         rr_reservation_number = None
         if payment_method == "charge_to_room":
             try:
-                rr_reservation_number, rr_guest = roomraccoon_verify_room(room_num)
+                rr_reservation_number, rr_guest = await roomraccoon_verify_room(room_num)
             except Exception as e:
                 conn.close()
                 json_response(self, {
@@ -498,7 +498,7 @@ class ApiOrdersHandler(BaseHandler):
         # ── Post to RoomRaccoon ────────────────────────────────────────────────
         if payment_method == "charge_to_room" and rr_reservation_number:
             try:
-                roomraccoon_charge_room(rr_reservation_number, room_num, order_item_rows, conn)
+                await roomraccoon_charge_room(rr_reservation_number, room_num, order_item_rows, conn)
                 # Mark as successfully posted to PMS
                 conn.execute(
                     "UPDATE orders SET roomraccoon_charge_status='posted', updated_at=? WHERE id=?",
@@ -560,7 +560,7 @@ class ApiOrderStatusHandler(BaseHandler):
 
 class ApiCreateYocoCheckoutHandler(BaseHandler):
     """Create a Yoco hosted checkout session and return the redirect URL."""
-    def post(self):
+    async def post(self):
         body = self.json_body()
         order_id = body.get("order_id")
         if not order_id:
@@ -585,25 +585,26 @@ class ApiCreateYocoCheckoutHandler(BaseHandler):
             "metadata":  {"orderId": order_id, "orderRef": order.get("order_reference", "")}
         }).encode()
 
-        req = urllib.request.Request(
+        request = HTTPRequest(
             "https://payments.yoco.com/api/checkouts",
-            data=payload,
+            method="POST",
+            body=payload,
             headers={
                 "Authorization": f"Bearer {YOCO_SECRET_KEY}",
                 "Content-Type":  "application/json",
             },
-            method="POST",
+            request_timeout=15.0,
         )
         try:
-            resp = urllib.request.urlopen(req, timeout=15)
-            result = json.loads(resp.read())
+            resp = await AsyncHTTPClient().fetch(request)
+            result = json.loads(resp.body)
             redirect_url = result.get("redirectUrl") or result.get("redirect_url")
             if not redirect_url:
                 json_response(self, {"error": "No redirect URL from Yoco", "detail": result}, 500)
                 return
             json_response(self, {"checkout_url": redirect_url})
-        except urllib.error.HTTPError as e:
-            error_body = e.read().decode()
+        except TornadoHTTPError as e:
+            error_body = e.response.body.decode() if e.response else str(e)
             json_response(self, {"error": "Yoco error", "detail": error_body}, 502)
 
 
@@ -782,7 +783,7 @@ class ApiAdminRetryRoomRaccoonHandler(BaseHandler):
     Allows admin to manually retry a failed RoomRaccoon charge.
     POST /api/admin/orders/<order_id>/retry-roomraccoon
     """
-    def post(self, order_id):
+    async def post(self, order_id):
         user = self.require_auth(["admin", "manager"])
         if not user:
             return
@@ -806,7 +807,7 @@ class ApiAdminRetryRoomRaccoonHandler(BaseHandler):
         # Re-verify if we don't have a reservation number
         if not reservation_number:
             try:
-                reservation_number, _ = roomraccoon_verify_room(room_num)
+                reservation_number, _ = await roomraccoon_verify_room(room_num)
                 conn.execute("UPDATE orders SET roomraccoon_reservation_number=? WHERE id=?",
                              (reservation_number, order_id))
                 conn.commit()
@@ -826,7 +827,7 @@ class ApiAdminRetryRoomRaccoonHandler(BaseHandler):
         ]
 
         try:
-            roomraccoon_charge_room(reservation_number, room_num, item_rows, conn)
+            await roomraccoon_charge_room(reservation_number, room_num, item_rows, conn)
             conn.execute(
                 "UPDATE orders SET roomraccoon_charge_status='posted', updated_at=? WHERE id=?",
                 (datetime.now().isoformat(), order_id)
